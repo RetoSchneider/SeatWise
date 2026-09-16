@@ -39,6 +39,7 @@ interface PerformanceOption {
 
 interface SeatSelectorProps {
   performances: PerformanceOption[];
+  timezone: string;
   signedIn: boolean;
 }
 
@@ -46,7 +47,11 @@ interface ApiError {
   error?: { message?: string };
 }
 
-export function SeatSelector({ performances, signedIn }: SeatSelectorProps) {
+export function SeatSelector({
+  performances,
+  timezone,
+  signedIn,
+}: SeatSelectorProps) {
   const common = useTranslations("common");
   const t = useTranslations("seatSelector");
   const locale = useLocale();
@@ -184,7 +189,7 @@ export function SeatSelector({ performances, signedIn }: SeatSelectorProps) {
           >
             {performances.map((option) => (
               <option key={option.id} value={option.id}>
-                {formatDateTime(option.startsAt, undefined, locale)}
+                {formatDateTime(option.startsAt, timezone, locale)}
               </option>
             ))}
           </select>

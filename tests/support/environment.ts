@@ -14,6 +14,8 @@ if (
 }
 
 export const testEnvironment = {
+  TZ: "UTC",
+  SEATWISE_TEST: "1",
   DATABASE_URL: databaseUrl.toString(),
   BETTER_AUTH_URL: "http://localhost:3100",
   BETTER_AUTH_SECRET: "seatwise-isolated-test-secret-minimum-32-characters",

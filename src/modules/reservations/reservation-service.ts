@@ -312,6 +312,7 @@ async function getReservation(
       slug: reservation.performance.event.slug,
       venue: reservation.performance.event.venue.name,
       startsAt: reservation.performance.startsAt,
+      timezone: reservation.performance.event.venue.timezone,
     },
     items: reservation.items.map((item) => ({
       id: item.id,

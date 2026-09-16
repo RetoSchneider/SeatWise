@@ -51,7 +51,11 @@ export default async function TicketPage({
             {ticket.performance.event.title}
           </h1>
           <p className="mt-3 text-white/75">
-            {formatDateTime(ticket.performance.startsAt, undefined, locale)}
+            {formatDateTime(
+              ticket.performance.startsAt,
+              ticket.performance.event.venue.timezone,
+              locale,
+            )}
           </p>
         </div>
         <div className="p-7">
@@ -68,7 +72,7 @@ export default async function TicketPage({
                 {ticket.performance.doorsAt
                   ? formatDateTime(
                       ticket.performance.doorsAt,
-                      undefined,
+                      ticket.performance.event.venue.timezone,
                       locale,
                     )
                   : t("doorsFallback")}

@@ -47,7 +47,7 @@ export default async function OrdersPage() {
                       {order.orderNumber} ·{" "}
                       {formatDateTime(
                         order.performance.startsAt,
-                        undefined,
+                        order.performance.event.venue.timezone,
                         locale,
                       )}{" "}
                       · {t("ticketCount", { count: order._count.tickets })}

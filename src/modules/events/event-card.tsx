@@ -10,7 +10,7 @@ interface EventCardProps {
     title: string;
     summary: string;
     category: string;
-    venue: { name: string; city: string; region: string };
+    venue: { name: string; city: string; region: string; timezone: string };
     nextPerformance: Date;
     startingPriceCents: number | null;
     currency: string;
@@ -47,7 +47,11 @@ export function EventCard({ event }: EventCardProps) {
             <div>
               <dt className="sr-only">{t("dateLabel")}</dt>
               <dd>
-                {formatDateTime(event.nextPerformance, undefined, locale)}
+                {formatDateTime(
+                  event.nextPerformance,
+                  event.venue.timezone,
+                  locale,
+                )}
               </dd>
             </div>
           </div>

@@ -59,8 +59,12 @@ export default async function OrderPage({
             {order.performance.event.title}
           </h1>
           <p className="text-muted mt-2 text-sm">
-            {formatDateTime(order.performance.startsAt, undefined, locale)} ·{" "}
-            {order.performance.event.venue.name}
+            {formatDateTime(
+              order.performance.startsAt,
+              order.performance.event.venue.timezone,
+              locale,
+            )}{" "}
+            · {order.performance.event.venue.name}
           </p>
         </div>
         <span className="bg-accent text-brand rounded-full px-3 py-1.5 text-xs font-extrabold uppercase">

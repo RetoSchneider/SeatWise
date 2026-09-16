@@ -18,6 +18,7 @@ interface CartViewProps {
       slug: string;
       venue: string;
       startsAt: Date;
+      timezone: string;
     };
     items: Array<{
       id: string;
@@ -185,7 +186,11 @@ export function CartView({ reservation: initialReservation }: CartViewProps) {
                 {reservation.event.title}
               </h1>
               <p className="text-muted mt-2 text-sm">
-                {formatDateTime(reservation.event.startsAt, undefined, locale)}{" "}
+                {formatDateTime(
+                  reservation.event.startsAt,
+                  reservation.event.timezone,
+                  locale,
+                )}{" "}
                 · {reservation.event.venue}
               </p>
             </div>

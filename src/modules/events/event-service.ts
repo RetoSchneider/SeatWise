@@ -114,6 +114,7 @@ export async function listPublishedEvents(query: EventCatalogQuery) {
           name: event.venue.name,
           city: event.venue.city,
           region: event.venue.region,
+          timezone: event.venue.timezone,
         },
         nextPerformance: performance.startsAt,
         startingPriceCents: performance.ticketTypes[0]?.priceCents ?? null,

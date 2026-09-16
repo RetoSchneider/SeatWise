@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
+  distDir: process.env.SEATWISE_TEST === "1" ? ".next/playwright" : ".next",
   poweredByHeader: false,
   serverExternalPackages: ["@node-rs/argon2"],
   async headers() {

@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { test as base, expect, type APIRequestContext } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type WebError,
+} from "@playwright/test";
 
 import {
   createScenario,
@@ -29,10 +34,15 @@ function clientHeaders(identity: string) {
 }
 
 export const test = base.extend<Fixtures>({
-  page: async ({ page }, provide) => {
+  page: async ({ page, context }, provide) => {
     const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    await provide(page);
+    const recordError = (event: WebError) => errors.push(event.error().message);
+    context.on("weberror", recordError);
+    try {
+      await provide(page);
+    } finally {
+      context.off("weberror", recordError);
+    }
     expect(errors, "Uncaught browser errors").toEqual([]);
   },
   extraHTTPHeaders: async ({}, provide, testInfo) => {

@@ -35,16 +35,25 @@ test("catalog searches an event and displays an empty result", async ({
   ).toBeVisible();
 });
 
-test("language changes persist after reloading", async ({ page }) => {
+test("language changes persist in a new page", async ({ page, context }) => {
   await page.goto("/events");
   await page
     .getByRole("combobox", { name: "Change language" })
     .selectOption("de");
   await expect(page.locator("html")).toHaveAttribute("lang", "de");
-  await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("lang", "de");
-  await expect(page.getByRole("heading", { level: 1 })).not.toHaveText(
-    "Find your next event",
+  await expect(
+    page.getByRole("combobox", { name: "Sprache ändern" }),
+  ).toBeEnabled();
+  expect(await context.cookies()).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "seatwise.locale", value: "de" }),
+    ]),
+  );
+  const nextPage = await context.newPage();
+  await nextPage.goto("/events");
+  await expect(nextPage.locator("html")).toHaveAttribute("lang", "de");
+  await expect(nextPage.getByRole("heading", { level: 1 })).toHaveText(
+    "Finde dein nächstes Event",
   );
 });
 

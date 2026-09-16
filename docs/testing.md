@@ -24,7 +24,8 @@ server commits it, then verifies a safe retry.
 
 Unit tests cover price calculations, simulator outcomes, safe callback URLs,
 event schedule rules, ticket limits, timezone validation, and transaction
-conflict classification.
+conflict classification. Date formatting tests cover venue timezones, daylight
+saving changes, and dates crossing midnight.
 
 ## Run locally
 
@@ -40,7 +41,10 @@ pnpm test:e2e
 
 Playwright starts and stops its own application on port 3100. It refuses to reuse
 an existing server, avoiding accidental tests against a demo or unrelated
-process. Tests do not use `.env` database credentials. `TEST_DATABASE_URL` can
+process. Test builds use `.next/playwright`, keeping them separate from the demo
+server's `.next` output. The test server runs in UTC while browsers use
+Europe/Zurich, so hydration checks detect accidental machine-local formatting.
+Tests do not use `.env` database credentials. `TEST_DATABASE_URL` can
 override the connection only for a local database named `seatwise_test`.
 
 Each test receives its own customer, second customer, organizer, administrator,
@@ -69,6 +73,13 @@ Locators use roles, labels, and visible text. Assertions wait for observable
 state. There are no fixed browser sleeps or test-order dependencies. HTML and
 JUnit reports are generated on every run; failed browser tests retain traces,
 screenshots, and video. Reports and test runtime data are ignored by Git.
+
+Language persistence is checked through the saved locale cookie and a fresh tab
+in the same browser context. This avoids WebKit reporting cancelled Next.js
+prefetch requests as page errors during an immediate reload. Uncaught error
+assertions cover every page in the context, including the new tab; errors are
+not filtered or suppressed. This verifies persistence across document loads,
+not the browser's reload cancellation behavior.
 
 To test the optimized production build, set `PLAYWRIGHT_PRODUCTION=1` before
 running Playwright. In PowerShell:

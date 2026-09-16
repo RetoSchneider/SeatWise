@@ -51,7 +51,7 @@ export default async function TicketsPage() {
                 <p className="text-sm font-bold">
                   {formatDateTime(
                     ticket.performance.startsAt,
-                    undefined,
+                    ticket.performance.event.venue.timezone,
                     locale,
                   )}
                 </p>

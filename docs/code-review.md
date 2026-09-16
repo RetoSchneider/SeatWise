@@ -53,10 +53,34 @@ Firefox is configured but its executable could not launch on this Windows host
 (`spawn UNKNOWN`). Docker is unavailable locally, so the Compose setup was not
 executed. Automatic approval review blocked downloading and launching Mailpit
 without providing a specific reason; SMTP delivery remains unverified. The
-Ubuntu CI workflow includes all three browsers, but has not been run remotely.
+Ubuntu CI workflow includes all three browsers. Its first remote run exposed
+the issues described below.
 
 The checkout request-hash migration was applied only to the test database. Apply
 pending migrations with `pnpm db:deploy` before running the updated application.
+
+## CI follow-up
+
+The first remote run reported nine React hydration failures across the booking
+tests. The server formatted dates in UTC while browsers used Europe/Zurich.
+Running the local server in UTC reproduced React error 418. Customer event,
+cart, order, and ticket dates now explicitly use the venue timezone; other date
+formatting defaults to UTC. The test server deliberately uses UTC to keep this
+regression detectable on developer machines.
+
+WebKit also reported cancelled Next.js prefetch requests as page errors when
+the language test immediately reloaded the page. The test now verifies the
+locale cookie and opens a fresh tab to check persistence across document loads.
+Error collection covers all tabs. The redundant client refresh after the
+cookie-setting Server Action was removed.
+
+Test builds now have a separate output directory so the automated server can
+run alongside the demo development server.
+
+After these changes, formatting, ESLint, TypeScript, and 31 unit tests passed.
+The UTC production server passed all 45 API, Chromium, and WebKit tests without
+retries. The revised WebKit language test also passed ten consecutive runs.
+Firefox and the updated remote CI run remain to be verified.
 
 ## Remaining scope
 

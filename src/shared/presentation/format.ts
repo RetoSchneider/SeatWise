@@ -9,7 +9,7 @@ export function formatCurrency(cents: number, currency = "CHF", locale = "en") {
 
 export function formatDateTime(
   value: Date | string,
-  timeZone?: string,
+  timeZone = "UTC",
   locale = "en",
 ) {
   return new Intl.DateTimeFormat(toBcp47(locale), {
@@ -22,5 +22,6 @@ export function formatDateTime(
 export function formatDate(value: Date | string, locale = "en") {
   return new Intl.DateTimeFormat(toBcp47(locale), {
     dateStyle: "long",
+    timeZone: "UTC",
   }).format(new Date(value));
 }

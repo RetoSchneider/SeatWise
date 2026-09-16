@@ -78,7 +78,7 @@ export default async function EventPage({ params }: EventPageProps) {
                 <dd>
                   {formatDateTime(
                     event.performances[0].startsAt,
-                    undefined,
+                    event.venue.timezone,
                     locale,
                   )}
                 </dd>
@@ -121,6 +121,7 @@ export default async function EventPage({ params }: EventPageProps) {
         <div className="border-line mt-12 border-t pt-12">
           <SeatSelector
             performances={event.performances}
+            timezone={event.venue.timezone}
             signedIn={Boolean(user)}
           />
         </div>

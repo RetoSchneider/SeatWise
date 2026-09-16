@@ -17,7 +17,11 @@ export async function listCustomerOrders(userId: string) {
         select: {
           startsAt: true,
           event: {
-            select: { title: true, slug: true },
+            select: {
+              title: true,
+              slug: true,
+              venue: { select: { timezone: true } },
+            },
           },
         },
       },
@@ -69,7 +73,7 @@ export async function listCustomerTickets(userId: string) {
           event: {
             select: {
               title: true,
-              venue: { select: { name: true, city: true } },
+              venue: { select: { name: true, city: true, timezone: true } },
             },
           },
         },

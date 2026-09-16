@@ -2,7 +2,6 @@
 
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
 import { Globe } from "lucide-react";
 
 import { locales, type Locale } from "@/i18n/config";
@@ -11,14 +10,12 @@ import { setUserLocale } from "@/i18n/locale";
 export function LanguageSwitcher() {
   const t = useTranslations("language");
   const activeLocale = useLocale();
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   function onChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const nextLocale = event.target.value as Locale;
     startTransition(async () => {
       await setUserLocale(nextLocale);
-      router.refresh();
     });
   }
 
