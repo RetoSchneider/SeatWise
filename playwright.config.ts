@@ -42,17 +42,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: process.env.PLAYWRIGHT_PRODUCTION
-      ? "node node_modules/next/dist/bin/next build && node node_modules/next/dist/bin/next start --port 3100"
-      : "node node_modules/next/dist/bin/next dev --port 3100",
+    command:
+      "node node_modules/next/dist/bin/next build && node node_modules/next/dist/bin/next start --port 3100",
     url: `${testEnvironment.BETTER_AUTH_URL}/api/v1/health/ready`,
     reuseExistingServer: false,
     timeout: 180_000,
     env: {
       ...testEnvironment,
-      NODE_ENV: process.env.PLAYWRIGHT_PRODUCTION
-        ? "production"
-        : "development",
+      NODE_ENV: "production",
     },
   },
 });

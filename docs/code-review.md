@@ -80,7 +80,20 @@ run alongside the demo development server.
 After these changes, formatting, ESLint, TypeScript, and 31 unit tests passed.
 The UTC production server passed all 45 API, Chromium, and WebKit tests without
 retries. The revised WebKit language test also passed ten consecutive runs.
-Firefox and the updated remote CI run remain to be verified.
+Firefox and the updated remote CI run were not verified at that point.
+
+## Automation runtime
+
+A later local development-mode run returned HTML 404 pages for four API requests
+and timed out during ticket navigation while hot reload was active. All five
+tests passed on a fresh development-server run without changes, demonstrating
+that the failure was intermittent. Playwright now always builds and starts the
+production app, matching CI and removing development compilation and hot reload
+from test execution. Assertions, timeouts, and retries were not relaxed.
+
+The updated default run passed all 54 tests across API, Chromium, Firefox, and
+WebKit without retries. Formatting, ESLint, TypeScript, and all 31 unit tests
+also passed. The local report records zero failures.
 
 ## Remaining scope
 

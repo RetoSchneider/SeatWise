@@ -191,8 +191,10 @@ suite, while one API test runs once. Vitest tests under `src` run separately.
 
 The runner uses two workers with parallel tests, a 45-second test timeout, and
 a 10-second assertion timeout. Server startup has a separate 180-second timeout
-and waits for `/api/v1/health/ready`. By default, the server uses development
-mode; setting `PLAYWRIGHT_PRODUCTION=1` switches it to a production build.
+and waits for `/api/v1/health/ready`. Every run builds and starts the production
+app, including UI mode and headed runs. This avoids development-server route
+compilation and hot reload affecting assertions. No mode environment variable
+is required.
 
 A typical run starts the app, creates the fixtures requested by each test,
 performs browser or API actions, checks the results, cleans up that test's data,
@@ -215,6 +217,8 @@ pnpm exec playwright test --project=chromium --ui
 ```
 
 Close the interactive runner before starting another run that needs port 3100.
+After editing application code, restart the runner to rebuild the app. Changes
+to test files can be rerun inside UI mode; application hot reload is not enabled.
 For a visible browser run, use:
 
 ```bash
@@ -263,21 +267,13 @@ pnpm exec playwright test --project=chromium --grep "declined payments" --repeat
 
 ### Match the CI run
 
-CI runs the optimized production app on Ubuntu with Docker and all three
-browsers. To run against the production build locally in PowerShell:
-
-```powershell
-pnpm check
-$env:PLAYWRIGHT_PRODUCTION = "1"
-pnpm test:e2e
-Remove-Item Env:PLAYWRIGHT_PRODUCTION
-```
-
-On macOS or Linux:
+CI and local runs both use the optimized production app and all three browsers.
+With the test infrastructure running and migrated, run these commands in
+PowerShell, macOS, or Linux:
 
 ```bash
 pnpm check
-PLAYWRIGHT_PRODUCTION=1 pnpm test:e2e
+pnpm test:e2e
 ```
 
 The test infrastructure must already be running and migrated. Playwright builds
@@ -286,10 +282,8 @@ inspect the **verify** job, and download the **playwright-results** artifact for
 reports and failure evidence.
 
 CI runs on pushes and pull requests, rejects committed `test.only` calls, and
-retains uploaded artifacts for seven days. Running the production suite locally
-matches the application mode, but the CI run still verifies the Ubuntu host.
-Remove `PLAYWRIGHT_PRODUCTION` when returning to development-mode tests; setting
-it to the string `"0"` still enables production mode in the current configuration.
+retains uploaded artifacts for seven days. Running the suite locally matches
+the application mode, but the CI run still verifies the Ubuntu host.
 
 ### Add a test
 

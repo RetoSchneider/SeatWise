@@ -81,14 +81,17 @@ assertions cover every page in the context, including the new tab; errors are
 not filtered or suppressed. This verifies persistence across document loads,
 not the browser's reload cancellation behavior.
 
-To test the optimized production build, set `PLAYWRIGHT_PRODUCTION=1` before
-running Playwright. In PowerShell:
+Every Playwright run builds and starts the optimized production app, including
+headed and interactive runs. This keeps local automation aligned with CI and
+avoids development-server route compilation and hot reload affecting tests:
 
-```powershell
-$env:PLAYWRIGHT_PRODUCTION = "1"
+```bash
 pnpm test:e2e
-Remove-Item Env:PLAYWRIGHT_PRODUCTION
 ```
+
+Restart an interactive runner after changing application code so the app is
+rebuilt. Test-file changes can be rerun within UI mode. Use the separate demo
+server on port 3000 for application development with hot reload.
 
 The CI workflow runs formatting, lint, types, unit tests, and the production
 Playwright suite on Ubuntu with Docker. A single CI retry records intermittent
