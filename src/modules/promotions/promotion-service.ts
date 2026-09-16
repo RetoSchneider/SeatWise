@@ -2,10 +2,7 @@ import type { AppliedPromotion } from "@/modules/pricing/pricing";
 import { ApplicationError } from "@/shared/domain/errors";
 import { database } from "@/shared/infrastructure/database";
 
-type PromotionClient = Pick<
-  typeof database,
-  "promotionCode" | "promotionRedemption"
->;
+type PromotionClient = Pick<typeof database, "promotionCode" | "order">;
 
 export async function validatePromotion(
   input: {
@@ -45,11 +42,18 @@ export async function validatePromotion(
   }
 
   const [totalRedemptions, customerRedemptions] = await Promise.all([
-    client.promotionRedemption.count({
-      where: { promotionCodeId: promotion.id },
+    client.order.count({
+      where: {
+        promotionCodeId: promotion.id,
+        status: { notIn: ["PAYMENT_FAILED", "CANCELLED"] },
+      },
     }),
-    client.promotionRedemption.count({
-      where: { promotionCodeId: promotion.id, userId: input.userId },
+    client.order.count({
+      where: {
+        promotionCodeId: promotion.id,
+        userId: input.userId,
+        status: { notIn: ["PAYMENT_FAILED", "CANCELLED"] },
+      },
     }),
   ]);
 

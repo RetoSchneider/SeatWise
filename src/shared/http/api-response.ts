@@ -6,6 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { env } from "@/shared/config/env";
 import { ApplicationError } from "@/shared/domain/errors";
 import { logger } from "@/shared/infrastructure/logger";
+import { isTransactionConflict } from "@/shared/infrastructure/transaction";
 
 interface ApiResult<T> {
   data: T;
@@ -125,10 +126,7 @@ function translateError(error: unknown, requestId: string) {
     };
   }
 
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2034"
-  ) {
+  if (isTransactionConflict(error)) {
     return {
       code: "INVENTORY_UNAVAILABLE",
       message:

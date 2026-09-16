@@ -4,6 +4,7 @@ import type { Clock } from "@/shared/domain/clock";
 import { systemClock } from "@/shared/domain/clock";
 import { conflict, forbidden, notFound } from "@/shared/domain/errors";
 import { database } from "@/shared/infrastructure/database";
+import { serializableTransaction } from "@/shared/infrastructure/transaction";
 import { recordAuditEvent } from "@/modules/audit/audit-service";
 import { notificationService } from "@/modules/notifications/notification-service";
 import {
@@ -26,59 +27,67 @@ export async function requestRefund(
   clock: Clock = systemClock,
 ) {
   const now = clock.now();
-  const order = await database.order.findFirst({
-    where: { id: orderId, userId },
-    include: {
-      performance: { include: { event: true } },
-      refunds: { where: { status: "SUCCEEDED" } },
-      refundRequests: {
-        where: { status: { in: ["REQUESTED", "APPROVED", "PROCESSING"] } },
+  return serializableTransaction(async (client) => {
+    const order = await client.order.findFirst({
+      where: { id: orderId, userId },
+      include: {
+        performance: { include: { event: true } },
+        refunds: { where: { status: "SUCCEEDED" } },
+        refundRequests: {
+          where: { status: { in: ["REQUESTED", "APPROVED", "PROCESSING"] } },
+        },
       },
-    },
-  });
-  if (!order) {
-    throw notFound("Order not found");
-  }
-  if (!["PAID", "PARTIALLY_REFUNDED"].includes(order.status)) {
-    throw conflict("CONFLICT", "This order is not eligible for a refund");
-  }
-  if (order.refundRequests.length > 0) {
-    throw conflict("CONFLICT", "A refund request is already in progress");
-  }
+    });
+    if (!order) {
+      throw notFound("Order not found");
+    }
+    if (!["PAID", "PARTIALLY_REFUNDED"].includes(order.status)) {
+      throw conflict("CONFLICT", "This order is not eligible for a refund");
+    }
+    if (order.refundRequests.length > 0) {
+      throw conflict("CONFLICT", "A refund request is already in progress");
+    }
 
-  const cutoffHours =
-    order.performance.event.refundPolicy === "UNTIL_7_DAYS" ? 168 : 24;
-  const cutoff = new Date(
-    order.performance.startsAt.getTime() - cutoffHours * 60 * 60 * 1_000,
-  );
-  if (
-    order.performance.event.refundPolicy === "NON_REFUNDABLE" ||
-    now >= cutoff
-  ) {
-    throw conflict("CONFLICT", "The refund window for this order has closed");
-  }
+    const cutoffHours =
+      order.performance.event.refundPolicy === "UNTIL_7_DAYS" ? 168 : 24;
+    const cutoff = new Date(
+      order.performance.startsAt.getTime() - cutoffHours * 60 * 60 * 1_000,
+    );
+    if (
+      order.performance.event.status !== "CANCELLED" &&
+      (order.performance.event.refundPolicy === "NON_REFUNDABLE" ||
+        now >= cutoff)
+    ) {
+      throw conflict("CONFLICT", "The refund window for this order has closed");
+    }
 
-  const alreadyRefunded = order.refunds.reduce(
-    (total, refund) => total + refund.amountCents,
-    0,
-  );
-  const amount = order.totalCents - alreadyRefunded;
-  const request = await database.refundRequest.create({
-    data: {
-      orderId: order.id,
-      userId,
-      reason,
-      requestedAmountCents: amount,
-    },
+    const alreadyRefunded = order.refunds.reduce(
+      (total, refund) => total + refund.amountCents,
+      0,
+    );
+    const amount = order.totalCents - alreadyRefunded;
+    if (amount <= 0)
+      throw conflict("CONFLICT", "There is no refundable balance");
+    const request = await client.refundRequest.create({
+      data: {
+        orderId: order.id,
+        userId,
+        reason,
+        requestedAmountCents: amount,
+      },
+    });
+    await recordAuditEvent(
+      {
+        actorUserId: userId,
+        action: "REFUND_REQUESTED",
+        entityType: "RefundRequest",
+        entityId: request.id,
+        metadata: { orderId: order.id, amountCents: amount },
+      },
+      client,
+    );
+    return request;
   });
-  await recordAuditEvent({
-    actorUserId: userId,
-    action: "REFUND_REQUESTED",
-    entityType: "RefundRequest",
-    entityId: request.id,
-    metadata: { orderId: order.id, amountCents: amount },
-  });
-  return request;
 }
 
 export async function processRefund(
@@ -113,7 +122,8 @@ export async function processRefund(
   }
   if (
     actor.role === "ORGANIZER" &&
-    refundRequest.order.organizer.userId !== actor.id
+    (refundRequest.order.organizer.userId !== actor.id ||
+      refundRequest.order.organizer.status !== "ACTIVE")
   ) {
     throw forbidden();
   }
@@ -122,14 +132,19 @@ export async function processRefund(
   }
 
   if (decision === "REJECT") {
-    const rejected = await database.refundRequest.update({
-      where: { id: refundRequest.id },
+    const rejected = await database.refundRequest.updateMany({
+      where: { id: refundRequest.id, status: "REQUESTED" },
       data: {
         status: "REJECTED",
         reviewedById: actor.id,
         resolvedAt: clock.now(),
       },
     });
+    if (rejected.count !== 1)
+      throw conflict(
+        "CONFLICT",
+        "This refund request has already been reviewed",
+      );
     await recordAuditEvent({
       actorUserId: actor.id,
       action: "REFUND_REJECTED",
@@ -137,7 +152,9 @@ export async function processRefund(
       entityId: refundRequest.id,
       metadata: { orderId: refundRequest.orderId },
     });
-    return rejected;
+    return database.refundRequest.findUniqueOrThrow({
+      where: { id: refundRequest.id },
+    });
   }
 
   const paymentAttempt = refundRequest.order.paymentAttempts[0];
@@ -172,88 +189,85 @@ export async function processRefund(
     throw conflict("PAYMENT_FAILED", "The payment refund failed");
   }
 
-  const completed = await database.$transaction(
-    async (client) => {
-      const order = await client.order.findUniqueOrThrow({
-        where: { id: refundRequest.orderId },
-        include: {
-          lines: {
-            include: {
-              reservationItem: true,
-              seatInventory: true,
-            },
+  const completed = await serializableTransaction(async (client) => {
+    const order = await client.order.findUniqueOrThrow({
+      where: { id: refundRequest.orderId },
+      include: {
+        lines: {
+          include: {
+            reservationItem: true,
+            seatInventory: true,
           },
         },
-      });
-      const refund = await client.refund.create({
-        data: {
-          orderId: order.id,
-          refundRequestId: refundRequest.id,
-          paymentAttemptId: paymentAttempt.id,
-          providerReference: outcome.providerReference,
-          amountCents: refundRequest.requestedAmountCents,
-          status: "SUCCEEDED",
-          completedAt: clock.now(),
-        },
-      });
+      },
+    });
+    const refund = await client.refund.create({
+      data: {
+        orderId: order.id,
+        refundRequestId: refundRequest.id,
+        paymentAttemptId: paymentAttempt.id,
+        providerReference: outcome.providerReference,
+        amountCents: refundRequest.requestedAmountCents,
+        status: "SUCCEEDED",
+        completedAt: clock.now(),
+      },
+    });
 
-      for (const line of order.lines) {
-        if (line.reservationItem.seatInventoryId) {
-          await client.seatInventory.updateMany({
-            where: {
-              soldOrderLineId: line.id,
-              state: "SOLD",
-            },
-            data: {
-              state: "AVAILABLE",
-              soldOrderLineId: null,
-              version: { increment: 1 },
-            },
-          });
-        } else {
-          await client.generalAdmissionInventory.update({
-            where: { ticketTypeId: line.ticketTypeId },
-            data: {
-              sold: { decrement: line.quantity },
-              version: { increment: 1 },
-            },
-          });
-        }
+    for (const line of order.lines) {
+      if (line.reservationItem.seatInventoryId) {
+        await client.seatInventory.updateMany({
+          where: {
+            soldOrderLineId: line.id,
+            state: "SOLD",
+          },
+          data: {
+            state: "AVAILABLE",
+            soldOrderLineId: null,
+            version: { increment: 1 },
+          },
+        });
+      } else {
+        await client.generalAdmissionInventory.update({
+          where: { ticketTypeId: line.ticketTypeId },
+          data: {
+            sold: { decrement: line.quantity },
+            version: { increment: 1 },
+          },
+        });
       }
+    }
 
-      await client.ticket.updateMany({
-        where: { orderId: order.id },
-        data: { status: "REFUNDED" },
-      });
-      await client.order.update({
-        where: { id: order.id },
-        data: { status: "REFUNDED" },
-      });
-      await client.refundRequest.update({
-        where: { id: refundRequest.id },
-        data: {
-          status: "SUCCEEDED",
-          processedAmountCents: refundRequest.requestedAmountCents,
-          resolvedAt: clock.now(),
+    await client.ticket.updateMany({
+      where: { orderId: order.id },
+      data: { status: "REFUNDED" },
+    });
+    await client.order.update({
+      where: { id: order.id },
+      data: { status: "REFUNDED" },
+    });
+    await client.refundRequest.update({
+      where: { id: refundRequest.id },
+      data: {
+        status: "SUCCEEDED",
+        processedAmountCents: refundRequest.requestedAmountCents,
+        resolvedAt: clock.now(),
+      },
+    });
+    await recordAuditEvent(
+      {
+        actorUserId: actor.id,
+        action: "REFUND_COMPLETED",
+        entityType: "Refund",
+        entityId: refund.id,
+        metadata: {
+          orderId: order.id,
+          amountCents: refund.amountCents,
         },
-      });
-      await recordAuditEvent(
-        {
-          actorUserId: actor.id,
-          action: "REFUND_COMPLETED",
-          entityType: "Refund",
-          entityId: refund.id,
-          metadata: {
-            orderId: order.id,
-            amountCents: refund.amountCents,
-          },
-        },
-        client,
-      );
-      return refund;
-    },
-    { isolationLevel: "Serializable" },
-  );
+      },
+      client,
+    );
+    return refund;
+  });
 
   await notificationService.sendEmail({
     userId: refundRequest.order.userId,

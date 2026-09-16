@@ -31,7 +31,7 @@ operational clarity.
 ## Technology
 
 Next.js 16 App Router, React 19, strict TypeScript, PostgreSQL 18, Prisma ORM 7,
-Tailwind CSS 4, Better Auth, Zod, next-intl, pnpm, Vitest, Docker Compose, and
+Tailwind CSS 4, Better Auth, Zod, next-intl, pnpm, Vitest, Playwright, Docker Compose, and
 Mailpit.
 
 ## Local setup
@@ -106,9 +106,9 @@ valid.
 ## Internationalization
 
 The interface is available in English (`en`) and German (`de`), implemented with
-[`next-intl`](https://next-intl.dev). Every user-facing string lives in a message
-catalog under `messages/`, and dates, numbers, and currency are formatted for the
-active locale.
+[`next-intl`](https://next-intl.dev). Interface labels live in message catalogs
+under `messages/`, and dates, numbers, and currency use the active locale. Some
+API error messages and seeded event content remain in their original language.
 
 - Message catalogs: `messages/en.json` and `messages/de.json`
 - Locale configuration and BCP-47 mapping: `src/i18n/config.ts`
@@ -126,38 +126,46 @@ only, so both languages share the same catalog data.
 To add a locale, extend `locales` in `src/i18n/config.ts`, add its BCP-47 tag,
 and provide a matching `messages/<locale>.json` catalog.
 
-## Commands
+## Quality and automation
+
+The Playwright suite runs real browser and API requests against PostgreSQL.
+Tests create their own users, venues, inventory, and promotions and remove only
+those records during teardown. No shared demo account or seed is required.
 
 ```bash
-pnpm dev             # development server
-pnpm build           # optimized production build
-pnpm start           # run the production build
-pnpm format          # format source and documentation
-pnpm format:check    # verify formatting
-pnpm lint            # ESLint
-pnpm typecheck       # strict TypeScript
-pnpm test            # unit and PostgreSQL concurrency tests
-pnpm check           # format, lint, types, and tests
-pnpm db:generate     # generate Prisma Client
-pnpm db:migrate      # create/apply a development migration
-pnpm db:deploy       # apply checked-in migrations
-pnpm db:seed         # replace data with deterministic demo data
-pnpm db:reset        # reset migrations and reseed
+pnpm test:db:up
+pnpm test:db:prepare
+pnpm exec playwright install chromium firefox webkit
+pnpm check
+pnpm test:e2e
+pnpm test:report
+pnpm test:db:down
 ```
 
-`pnpm test` expects the Compose PostgreSQL service and the seeded baseline to be
-available. The concurrency test creates isolated users and removes them after
-the test.
+The test stack uses PostgreSQL on port 55432, SMTP on 11025, Mailpit on 18025,
+and an application started by Playwright on 3100. It is separate from the demo
+stack. Test code refuses database URLs that do not name a local `seatwise_test`
+database. The test PostgreSQL container uses temporary storage.
 
-## Test environment
+| Command            | Purpose                                          |
+| ------------------ | ------------------------------------------------ |
+| `pnpm dev`         | Development server                               |
+| `pnpm build`       | Production build                                 |
+| `pnpm start`       | Production server                                |
+| `pnpm check`       | Formatting, lint, TypeScript, and unit tests     |
+| `pnpm test`        | Unit tests; no database service required         |
+| `pnpm test:api`    | Playwright API and database tests                |
+| `pnpm test:e2e`    | API tests and Chromium, Firefox, WebKit UI tests |
+| `pnpm test:e2e:ui` | Interactive Playwright runner                    |
+| `pnpm test:report` | Open the HTML report                             |
+| `pnpm smoke`       | Alias for the isolated API suite                 |
+| `pnpm db:generate` | Generate Prisma Client                           |
+| `pnpm db:deploy`   | Apply checked-in migrations                      |
+| `pnpm db:seed`     | Replace demo data                                |
 
-Use a separate PostgreSQL database and set `NODE_ENV=test`. Copy the safe
-variables from `.env.example`, point `DATABASE_URL` at the disposable database,
-then run migrations and seed explicitly. Production authentication is not
-weakened for tests; the replaceable clock, payment provider, email sender, and
-identifier interfaces support deterministic service tests.
-
-No test-support mutation API is exposed.
+See [the test strategy](docs/testing.md) for coverage, debugging, CI, and
+production-build testing. See [the review notes](docs/code-review.md) for the
+bugs addressed and the remaining boundaries of this portfolio app.
 
 ## Architecture and operations
 

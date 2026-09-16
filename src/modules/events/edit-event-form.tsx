@@ -44,6 +44,7 @@ function localDateTime(value: Date | null) {
 }
 
 export function EditEventForm({ event }: { event: EditableEvent }) {
+  const common = useTranslations("common");
   const t = useTranslations("organizer.editEvent");
   const router = useRouter();
   const performance = event.performances[0];
@@ -56,65 +57,69 @@ export function EditEventForm({ event }: { event: EditableEvent }) {
   }
 
   async function submit(formEvent: FormEvent<HTMLFormElement>) {
-    formEvent.preventDefault();
-    setPending(true);
-    setError("");
-    setSaved(false);
-    const form = new FormData(formEvent.currentTarget);
-    const toUtc = (name: string) => {
-      const value = String(form.get(name) ?? "");
-      return value ? new Date(value).toISOString() : null;
-    };
-    const response = await fetch(`/api/v1/organizer/events/${event.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: form.get("title"),
-        summary: form.get("summary"),
-        description: form.get("description"),
-        category: form.get("category"),
-        refundPolicy: form.get("refundPolicy"),
-        performance: {
-          id: performance.id,
-          startsAt: toUtc("startsAt"),
-          doorsAt: toUtc("doorsAt"),
-          endsAt: toUtc("endsAt"),
-          salesStartAt: toUtc("salesStartAt"),
-          salesEndAt: toUtc("salesEndAt"),
-          reservationDurationMinutes: Number(
-            form.get("reservationDurationMinutes"),
-          ),
-        },
-        ticketTypes: performance.ticketTypes.map((ticketType) => ({
-          id: ticketType.id,
-          name: form.get(`name:${ticketType.id}`),
-          description: form.get(`description:${ticketType.id}`) || null,
-          priceCents: Math.round(
-            Number(form.get(`price:${ticketType.id}`)) * 100,
-          ),
-          minPerOrder: Number(form.get(`minimum:${ticketType.id}`)),
-          maxPerOrder: Number(form.get(`maximum:${ticketType.id}`)),
-          capacity: ticketType.generalAdmissionInventory
-            ? Number(form.get(`capacity:${ticketType.id}`))
-            : null,
-        })),
-      }),
-    });
-    const payload = (await response.json()) as {
-      error?: { message?: string; details?: Array<{ message: string }> };
-    };
-    if (!response.ok) {
-      setError(
-        payload.error?.details?.[0]?.message ??
-          payload.error?.message ??
-          t("failed"),
-      );
+    try {
+      formEvent.preventDefault();
+      setPending(true);
+      setError("");
+      setSaved(false);
+      const form = new FormData(formEvent.currentTarget);
+      const toUtc = (name: string) => {
+        const value = String(form.get(name) ?? "");
+        return value ? new Date(value).toISOString() : null;
+      };
+      const response = await fetch(`/api/v1/organizer/events/${event.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: form.get("title"),
+          summary: form.get("summary"),
+          description: form.get("description"),
+          category: form.get("category"),
+          refundPolicy: form.get("refundPolicy"),
+          performance: {
+            id: performance.id,
+            startsAt: toUtc("startsAt"),
+            doorsAt: toUtc("doorsAt"),
+            endsAt: toUtc("endsAt"),
+            salesStartAt: toUtc("salesStartAt"),
+            salesEndAt: toUtc("salesEndAt"),
+            reservationDurationMinutes: Number(
+              form.get("reservationDurationMinutes"),
+            ),
+          },
+          ticketTypes: performance.ticketTypes.map((ticketType) => ({
+            id: ticketType.id,
+            name: form.get(`name:${ticketType.id}`),
+            description: form.get(`description:${ticketType.id}`) || null,
+            priceCents: Math.round(
+              Number(form.get(`price:${ticketType.id}`)) * 100,
+            ),
+            minPerOrder: Number(form.get(`minimum:${ticketType.id}`)),
+            maxPerOrder: Number(form.get(`maximum:${ticketType.id}`)),
+            capacity: ticketType.generalAdmissionInventory
+              ? Number(form.get(`capacity:${ticketType.id}`))
+              : null,
+          })),
+        }),
+      });
+      const payload = (await response.json()) as {
+        error?: { message?: string; details?: Array<{ message: string }> };
+      };
+      if (!response.ok) {
+        setError(
+          payload.error?.details?.[0]?.message ??
+            payload.error?.message ??
+            t("failed"),
+        );
+        return;
+      }
+      setSaved(true);
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    setSaved(true);
-    setPending(false);
-    router.refresh();
   }
 
   const scheduleFields: Array<[string, string, Date | null, boolean]> = [

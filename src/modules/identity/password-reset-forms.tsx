@@ -7,20 +7,31 @@ import Link from "next/link";
 import { authClient } from "@/modules/identity/auth-client";
 
 export function ForgotPasswordForm() {
+  const common = useTranslations("common");
   const t = useTranslations("auth");
+  const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    const form = new FormData(event.currentTarget);
-    await authClient.requestPasswordReset({
-      email: String(form.get("email")),
-      redirectTo: "/reset-password",
-    });
-    setSent(true);
-    setPending(false);
+    try {
+      event.preventDefault();
+      setPending(true);
+      const form = new FormData(event.currentTarget);
+      const result = await authClient.requestPasswordReset({
+        email: String(form.get("email")),
+        redirectTo: "/reset-password",
+      });
+      if (result.error) {
+        setError(common("requestFailed"));
+        return;
+      }
+      setSent(true);
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
+      setPending(false);
+    }
   }
 
   if (sent) {
@@ -40,6 +51,11 @@ export function ForgotPasswordForm() {
 
   return (
     <form onSubmit={submit} className="mt-7 space-y-5">
+      {error && (
+        <p role="alert" className="text-danger text-sm">
+          {error}
+        </p>
+      )}
       <label className="block">
         <span className="text-sm font-bold">{t("emailAddress")}</span>
         <input
@@ -62,31 +78,37 @@ export function ForgotPasswordForm() {
 }
 
 export function ResetPasswordForm({ token }: { token: string }) {
+  const common = useTranslations("common");
   const t = useTranslations("auth");
   const [error, setError] = useState("");
   const [complete, setComplete] = useState(false);
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const password = String(form.get("password"));
-    if (password !== String(form.get("confirmation"))) {
-      setError(t("reset.mismatch"));
-      return;
-    }
-    setPending(true);
-    const result = await authClient.resetPassword({
-      newPassword: password,
-      token,
-    });
-    if (result.error) {
-      setError(t("reset.invalidToken"));
+    try {
+      event.preventDefault();
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const password = String(form.get("password"));
+      if (password !== String(form.get("confirmation"))) {
+        setError(t("reset.mismatch"));
+        return;
+      }
+      setPending(true);
+      const result = await authClient.resetPassword({
+        newPassword: password,
+        token,
+      });
+      if (result.error) {
+        setError(t("reset.invalidToken"));
+        return;
+      }
+      setComplete(true);
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    setComplete(true);
   }
 
   if (complete) {

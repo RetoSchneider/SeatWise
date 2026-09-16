@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 export function RefundRequestForm({ orderId }: { orderId: string }) {
+  const common = useTranslations("common");
   const t = useTranslations("refundForm");
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -12,25 +13,30 @@ export function RefundRequestForm({ orderId }: { orderId: string }) {
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const response = await fetch(`/api/v1/orders/${orderId}/refunds`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: String(form.get("reason")) }),
-    });
-    const payload = (await response.json()) as {
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      setError(payload.error?.message ?? t("failed"));
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const response = await fetch(`/api/v1/orders/${orderId}/refunds`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: String(form.get("reason")) }),
+      });
+      const payload = (await response.json()) as {
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        setError(payload.error?.message ?? t("failed"));
+        return;
+      }
+      setOpen(false);
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    setOpen(false);
-    router.refresh();
   }
 
   if (!open) {

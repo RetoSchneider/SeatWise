@@ -41,14 +41,14 @@ stored only as keyed hashes.
 
 - Argon2id password hashing with an OWASP-aligned 19 MiB memory cost and two
   passes
-- HttpOnly, SameSite=Lax session cookies; Secure cookies outside development
+- HttpOnly, SameSite=Lax session cookies; Secure cookies on HTTPS origins
 - Better Auth origin checks and trusted redirect origins
 - additional same-origin validation for versioned business mutations
 - role and ownership checks on every protected server operation
 - Zod validation at API and form trust boundaries
 - parameterized Prisma queries and tagged raw SQL
 - CSP with per-request script nonces, frame denial, MIME sniffing denial,
-  restrictive permissions policy, and production HSTS
+  restrictive permissions policy, and HTTPS HSTS
 - database-backed rate limiting for reservation and checkout endpoints and
   Better Auth rate limiting for identity endpoints
 - generic authentication failures and safe API error translation

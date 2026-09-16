@@ -9,54 +9,59 @@ export function PromotionForm({
 }: {
   events: Array<{ id: string; title: string }>;
 }) {
+  const common = useTranslations("common");
   const t = useTranslations("organizer.promotionForm");
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const startsAt = new Date(String(form.get("startsAt"))).toISOString();
-    const endsAt = new Date(String(form.get("endsAt"))).toISOString();
-    const type = String(form.get("type"));
-    const value =
-      type === "PERCENTAGE"
-        ? Number(form.get("value"))
-        : Math.round(Number(form.get("value")) * 100);
-    const eventId = String(form.get("eventId"));
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const startsAt = new Date(String(form.get("startsAt"))).toISOString();
+      const endsAt = new Date(String(form.get("endsAt"))).toISOString();
+      const type = String(form.get("type"));
+      const value =
+        type === "PERCENTAGE"
+          ? Number(form.get("value"))
+          : Math.round(Number(form.get("value")) * 100);
+      const eventId = String(form.get("eventId"));
 
-    const response = await fetch("/api/v1/organizer/promotions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        eventId: eventId || undefined,
-        code: form.get("code"),
-        description: form.get("description"),
-        type,
-        value,
-        minimumSubtotalCents: Math.round(
-          Number(form.get("minimumSubtotal")) * 100,
-        ),
-        startsAt,
-        endsAt,
-        redemptionLimit: Number(form.get("redemptionLimit")) || undefined,
-        limitPerCustomer: Number(form.get("limitPerCustomer")),
-      }),
-    });
-    const payload = (await response.json()) as {
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      setError(payload.error?.message ?? t("failed"));
+      const response = await fetch("/api/v1/organizer/promotions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          eventId: eventId || undefined,
+          code: form.get("code"),
+          description: form.get("description"),
+          type,
+          value,
+          minimumSubtotalCents: Math.round(
+            Number(form.get("minimumSubtotal")) * 100,
+          ),
+          startsAt,
+          endsAt,
+          redemptionLimit: Number(form.get("redemptionLimit")) || undefined,
+          limitPerCustomer: Number(form.get("limitPerCustomer")),
+        }),
+      });
+      const payload = (await response.json()) as {
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        setError(payload.error?.message ?? t("failed"));
+        return;
+      }
+      event.currentTarget.reset();
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    event.currentTarget.reset();
-    setPending(false);
-    router.refresh();
   }
 
   return (

@@ -5,11 +5,12 @@ import { systemClock } from "@/shared/domain/clock";
 import { conflict, forbidden, notFound } from "@/shared/domain/errors";
 import { secureIdentifierGenerator } from "@/shared/domain/identifiers";
 import { database } from "@/shared/infrastructure/database";
+import { serializableTransaction } from "@/shared/infrastructure/transaction";
 import { recordAuditEvent } from "@/modules/audit/audit-service";
 
 const currencySchema = z
   .string()
-  .length(3)
+  .regex(/^[A-Za-z]{3}$/)
   .transform((value) => value.toUpperCase());
 
 export const venueSchema = z.object({
@@ -24,7 +25,19 @@ export const venueSchema = z.object({
     .string()
     .length(2)
     .transform((value) => value.toUpperCase()),
-  timezone: z.string().trim().min(3).max(80),
+  timezone: z
+    .string()
+    .trim()
+    .min(3)
+    .max(80)
+    .refine((timezone) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: timezone });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Use a valid IANA timezone"),
 });
 
 export const venueSectionSchema = z
@@ -83,6 +96,26 @@ const ticketTypeSchema = z.object({
   capacity: z.number().int().min(1).max(10_000).optional(),
 });
 
+function validateSchedule(
+  performance: { startsAt: Date; doorsAt?: Date | null; endsAt?: Date | null },
+  context: z.RefinementCtx,
+) {
+  if (performance.doorsAt && performance.doorsAt > performance.startsAt) {
+    context.addIssue({
+      code: "custom",
+      path: ["performance", "doorsAt"],
+      message: "Doors must open before the performance starts",
+    });
+  }
+  if (performance.endsAt && performance.endsAt <= performance.startsAt) {
+    context.addIssue({
+      code: "custom",
+      path: ["performance", "endsAt"],
+      message: "Performance end must follow its start",
+    });
+  }
+}
+
 export const createEventSchema = z
   .object({
     venueId: z.string().min(1),
@@ -104,6 +137,32 @@ export const createEventSchema = z
     ticketTypes: z.array(ticketTypeSchema).min(1).max(30),
   })
   .superRefine((value, context) => {
+    validateSchedule(value.performance, context);
+    if (
+      new Set(value.ticketTypes.map((type) => type.sectionId)).size !==
+      value.ticketTypes.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["ticketTypes"],
+        message: "Each section must have one ticket type",
+      });
+    }
+    if (new Set(value.ticketTypes.map((type) => type.currency)).size !== 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["ticketTypes"],
+        message: "All ticket types must use the same currency",
+      });
+    }
+    for (const [index, type] of value.ticketTypes.entries()) {
+      if (type.minPerOrder > type.maxPerOrder)
+        context.addIssue({
+          code: "custom",
+          path: ["ticketTypes", index, "maxPerOrder"],
+          message: "Maximum must be at least the minimum",
+        });
+    }
     if (value.performance.salesEndAt > value.performance.startsAt) {
       context.addIssue({
         code: "custom",
@@ -152,6 +211,7 @@ export const updateEventSchema = z
       .max(30),
   })
   .superRefine((value, context) => {
+    validateSchedule(value.performance, context);
     if (
       value.performance.salesStartAt >= value.performance.salesEndAt ||
       value.performance.salesEndAt > value.performance.startsAt
@@ -295,129 +355,126 @@ export async function createEvent(
     throw conflict("VALIDATION_ERROR", "Performance must be in the future");
   }
 
-  return database.$transaction(
-    async (client) => {
-      const venue = await client.venue.findFirst({
-        where: {
-          id: input.venueId,
-          organizerId: organizer.id,
-          status: "ACTIVE",
+  return serializableTransaction(async (client) => {
+    const venue = await client.venue.findFirst({
+      where: {
+        id: input.venueId,
+        organizerId: organizer.id,
+        status: "ACTIVE",
+      },
+      include: {
+        sections: {
+          include: { rows: { include: { seats: true } } },
         },
-        include: {
-          sections: {
-            include: { rows: { include: { seats: true } } },
-          },
-        },
-      });
-      if (!venue) {
-        throw notFound("Venue not found");
-      }
+      },
+    });
+    if (!venue) {
+      throw notFound("Venue not found");
+    }
 
-      const sections = new Map(
-        venue.sections.map((section) => [section.id, section]),
-      );
-      for (const ticketType of input.ticketTypes) {
-        const section = sections.get(ticketType.sectionId);
-        if (!section) {
-          throw forbidden("A ticket type references a different venue");
-        }
-        if (
-          section.type === "GENERAL_ADMISSION" &&
-          (!ticketType.capacity || ticketType.capacity > section.capacity)
-        ) {
-          throw conflict(
-            "VALIDATION_ERROR",
-            `Capacity for ${ticketType.name} must be within the section capacity`,
-          );
-        }
+    const sections = new Map(
+      venue.sections.map((section) => [section.id, section]),
+    );
+    for (const ticketType of input.ticketTypes) {
+      const section = sections.get(ticketType.sectionId);
+      if (!section) {
+        throw forbidden("A ticket type references a different venue");
       }
+      if (
+        section.type === "GENERAL_ADMISSION" &&
+        (!ticketType.capacity || ticketType.capacity > section.capacity)
+      ) {
+        throw conflict(
+          "VALIDATION_ERROR",
+          `Capacity for ${ticketType.name} must be within the section capacity`,
+        );
+      }
+    }
 
-      const event = await client.event.create({
+    const event = await client.event.create({
+      data: {
+        organizerId: organizer.id,
+        venueId: venue.id,
+        slug: slugify(input.title),
+        title: input.title,
+        summary: input.summary,
+        description: input.description,
+        category: input.category,
+        refundPolicy: input.refundPolicy,
+        salesStartAt: input.performance.salesStartAt,
+        salesEndAt: input.performance.salesEndAt,
+      },
+    });
+    const performance = await client.performance.create({
+      data: {
+        eventId: event.id,
+        ...input.performance,
+      },
+    });
+
+    for (const requestedType of input.ticketTypes) {
+      const section = sections.get(requestedType.sectionId);
+      if (!section) {
+        throw notFound("Venue section not found");
+      }
+      const ticketType = await client.ticketType.create({
         data: {
-          organizerId: organizer.id,
-          venueId: venue.id,
-          slug: slugify(input.title),
-          title: input.title,
-          summary: input.summary,
-          description: input.description,
-          category: input.category,
-          refundPolicy: input.refundPolicy,
+          performanceId: performance.id,
+          sectionId: section.id,
+          name: requestedType.name,
+          description: requestedType.description,
+          priceCents: requestedType.priceCents,
+          currency: requestedType.currency,
+          minPerOrder: requestedType.minPerOrder,
+          maxPerOrder: requestedType.maxPerOrder,
           salesStartAt: input.performance.salesStartAt,
           salesEndAt: input.performance.salesEndAt,
         },
       });
-      const performance = await client.performance.create({
-        data: {
-          eventId: event.id,
-          ...input.performance,
-        },
-      });
 
-      for (const requestedType of input.ticketTypes) {
-        const section = sections.get(requestedType.sectionId);
-        if (!section) {
-          throw notFound("Venue section not found");
-        }
-        const ticketType = await client.ticketType.create({
+      if (section.type === "GENERAL_ADMISSION") {
+        await client.generalAdmissionInventory.create({
           data: {
             performanceId: performance.id,
-            sectionId: section.id,
-            name: requestedType.name,
-            description: requestedType.description,
-            priceCents: requestedType.priceCents,
-            currency: requestedType.currency,
-            minPerOrder: requestedType.minPerOrder,
-            maxPerOrder: requestedType.maxPerOrder,
-            salesStartAt: input.performance.salesStartAt,
-            salesEndAt: input.performance.salesEndAt,
+            ticketTypeId: ticketType.id,
+            capacity: requestedType.capacity ?? section.capacity,
           },
         });
-
-        if (section.type === "GENERAL_ADMISSION") {
-          await client.generalAdmissionInventory.create({
-            data: {
-              performanceId: performance.id,
-              ticketTypeId: ticketType.id,
-              capacity: requestedType.capacity ?? section.capacity,
-            },
-          });
-        } else {
-          const seats = section.rows.flatMap((row) => row.seats);
-          await client.seatInventory.createMany({
-            data: seats.map((seat) => ({
-              performanceId: performance.id,
-              seatId: seat.id,
-              ticketTypeId: ticketType.id,
-            })),
-          });
-        }
+      } else {
+        const seats = section.rows.flatMap((row) => row.seats);
+        await client.seatInventory.createMany({
+          data: seats.map((seat) => ({
+            performanceId: performance.id,
+            seatId: seat.id,
+            ticketTypeId: ticketType.id,
+          })),
+        });
       }
+    }
 
-      await recordAuditEvent(
-        {
-          actorUserId: userId,
-          action: "EVENT_CREATED",
-          entityType: "Event",
-          entityId: event.id,
-          metadata: { title: event.title, performanceId: performance.id },
-        },
-        client,
-      );
-      return client.event.findUniqueOrThrow({
-        where: { id: event.id },
-        include: {
-          venue: true,
-          performances: {
-            include: {
-              ticketTypes: true,
-              _count: { select: { seatInventory: true } },
-            },
+    await recordAuditEvent(
+      {
+        actorUserId: userId,
+        action: "EVENT_CREATED",
+        entityType: "Event",
+        entityId: event.id,
+        metadata: { title: event.title, performanceId: performance.id },
+      },
+      client,
+    );
+    return client.event.findUniqueOrThrow({
+      where: { id: event.id },
+      include: {
+        venue: true,
+        performances: {
+          include: {
+            ticketTypes: true,
+            _count: { select: { seatInventory: true } },
           },
         },
-      });
-    },
-    { isolationLevel: "Serializable" },
-  );
+      },
+    });
+  });
 }
 
 export async function getOrganizerEvent(userId: string, eventId: string) {
@@ -449,129 +506,133 @@ export async function updateEvent(
 ) {
   const organizer = await organizerForUser(userId);
 
-  return database.$transaction(
-    async (client) => {
-      const event = await client.event.findFirst({
-        where: { id: eventId, organizerId: organizer.id },
-        include: {
-          performances: {
-            include: {
-              ticketTypes: {
-                include: { generalAdmissionInventory: true, section: true },
-              },
+  return serializableTransaction(async (client) => {
+    const event = await client.event.findFirst({
+      where: { id: eventId, organizerId: organizer.id },
+      include: {
+        performances: {
+          include: {
+            ticketTypes: {
+              include: { generalAdmissionInventory: true, section: true },
             },
           },
         },
-      });
-      if (!event) {
-        throw notFound("Event not found");
-      }
-      if (event.status === "CANCELLED") {
-        throw conflict("CONFLICT", "A cancelled event cannot be edited");
-      }
-      const performance = event.performances.find(
-        (item) => item.id === input.performance.id,
+      },
+    });
+    if (!event) {
+      throw notFound("Event not found");
+    }
+    if (event.status === "CANCELLED") {
+      throw conflict("CONFLICT", "A cancelled event cannot be edited");
+    }
+    const performance = event.performances.find(
+      (item) => item.id === input.performance.id,
+    );
+    if (!performance) {
+      throw forbidden("Performance does not belong to this event");
+    }
+    const existingTicketTypes = new Map(
+      performance.ticketTypes.map((ticketType) => [ticketType.id, ticketType]),
+    );
+    if (
+      new Set(input.ticketTypes.map((type) => type.id)).size !==
+        existingTicketTypes.size ||
+      input.ticketTypes.length !== existingTicketTypes.size
+    ) {
+      throw conflict(
+        "VALIDATION_ERROR",
+        "Supply each existing ticket type exactly once",
       );
-      if (!performance) {
-        throw forbidden("Performance does not belong to this event");
-      }
-      const existingTicketTypes = new Map(
-        performance.ticketTypes.map((ticketType) => [
-          ticketType.id,
-          ticketType,
-        ]),
-      );
-      if (
-        input.ticketTypes.some(
-          (ticketType) => !existingTicketTypes.has(ticketType.id),
-        )
-      ) {
-        throw forbidden("Ticket type does not belong to this event");
-      }
+    }
+    if (
+      input.ticketTypes.some(
+        (ticketType) => !existingTicketTypes.has(ticketType.id),
+      )
+    ) {
+      throw forbidden("Ticket type does not belong to this event");
+    }
 
-      await client.event.update({
-        where: { id: event.id },
+    await client.event.update({
+      where: { id: event.id },
+      data: {
+        title: input.title,
+        summary: input.summary,
+        description: input.description,
+        category: input.category,
+        refundPolicy: input.refundPolicy,
+        salesStartAt: input.performance.salesStartAt,
+        salesEndAt: input.performance.salesEndAt,
+      },
+    });
+    await client.performance.update({
+      where: { id: performance.id },
+      data: {
+        startsAt: input.performance.startsAt,
+        doorsAt: input.performance.doorsAt,
+        endsAt: input.performance.endsAt,
+        salesStartAt: input.performance.salesStartAt,
+        salesEndAt: input.performance.salesEndAt,
+        reservationDurationMinutes:
+          input.performance.reservationDurationMinutes,
+      },
+    });
+
+    for (const requested of input.ticketTypes) {
+      const current = existingTicketTypes.get(requested.id);
+      if (!current) {
+        throw notFound("Ticket type not found");
+      }
+      await client.ticketType.update({
+        where: { id: current.id },
         data: {
-          title: input.title,
-          summary: input.summary,
-          description: input.description,
-          category: input.category,
-          refundPolicy: input.refundPolicy,
+          name: requested.name,
+          description: requested.description,
+          priceCents: requested.priceCents,
+          minPerOrder: requested.minPerOrder,
+          maxPerOrder: requested.maxPerOrder,
           salesStartAt: input.performance.salesStartAt,
           salesEndAt: input.performance.salesEndAt,
         },
       });
-      await client.performance.update({
-        where: { id: performance.id },
-        data: {
-          startsAt: input.performance.startsAt,
-          doorsAt: input.performance.doorsAt,
-          endsAt: input.performance.endsAt,
-          salesStartAt: input.performance.salesStartAt,
-          salesEndAt: input.performance.salesEndAt,
-          reservationDurationMinutes:
-            input.performance.reservationDurationMinutes,
-        },
-      });
-
-      for (const requested of input.ticketTypes) {
-        const current = existingTicketTypes.get(requested.id);
-        if (!current) {
-          throw notFound("Ticket type not found");
+      if (current.generalAdmissionInventory && requested.capacity) {
+        if (
+          requested.capacity <
+            current.generalAdmissionInventory.reserved +
+              current.generalAdmissionInventory.sold ||
+          requested.capacity > (current.section?.capacity ?? 0)
+        ) {
+          throw conflict(
+            "CONFLICT",
+            `Capacity for ${current.name} is outside the available section range`,
+          );
         }
-        await client.ticketType.update({
-          where: { id: current.id },
-          data: {
-            name: requested.name,
-            description: requested.description,
-            priceCents: requested.priceCents,
-            minPerOrder: requested.minPerOrder,
-            maxPerOrder: requested.maxPerOrder,
-            salesStartAt: input.performance.salesStartAt,
-            salesEndAt: input.performance.salesEndAt,
-          },
+        await client.generalAdmissionInventory.update({
+          where: { id: current.generalAdmissionInventory.id },
+          data: { capacity: requested.capacity, version: { increment: 1 } },
         });
-        if (current.generalAdmissionInventory && requested.capacity) {
-          if (
-            requested.capacity <
-              current.generalAdmissionInventory.reserved +
-                current.generalAdmissionInventory.sold ||
-            requested.capacity > (current.section?.capacity ?? 0)
-          ) {
-            throw conflict(
-              "CONFLICT",
-              `Capacity for ${current.name} is outside the available section range`,
-            );
-          }
-          await client.generalAdmissionInventory.update({
-            where: { id: current.generalAdmissionInventory.id },
-            data: { capacity: requested.capacity, version: { increment: 1 } },
-          });
-        }
       }
+    }
 
-      await recordAuditEvent(
-        {
-          actorUserId: userId,
-          action: "EVENT_UPDATED",
-          entityType: "Event",
-          entityId: event.id,
-          metadata: {
-            performanceId: performance.id,
-            ticketTypeCount: input.ticketTypes.length,
-          },
+    await recordAuditEvent(
+      {
+        actorUserId: userId,
+        action: "EVENT_UPDATED",
+        entityType: "Event",
+        entityId: event.id,
+        metadata: {
+          performanceId: performance.id,
+          ticketTypeCount: input.ticketTypes.length,
         },
-        client,
-      );
-      return client.event.findUniqueOrThrow({
-        where: { id: event.id },
-        include: {
-          performances: { include: { ticketTypes: true } },
-        },
-      });
-    },
-    { isolationLevel: "Serializable" },
-  );
+      },
+      client,
+    );
+    return client.event.findUniqueOrThrow({
+      where: { id: event.id },
+      include: {
+        performances: { include: { ticketTypes: true } },
+      },
+    });
+  });
 }
 
 export async function setEventStatus(
@@ -599,6 +660,8 @@ export async function setEventStatus(
   if (!event) {
     throw notFound("Event not found");
   }
+  if (event.status === "CANCELLED")
+    throw conflict("CONFLICT", "A cancelled event cannot change status");
   if (
     action === "PUBLISH" &&
     (event.performances.length === 0 ||

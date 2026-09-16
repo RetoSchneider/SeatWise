@@ -3,3 +3,8 @@ coverage
 node_modules
 src/generated
 pnpm-lock.yaml
+
+.test-runtime
+playwright-report
+test-results
+package-lock.json

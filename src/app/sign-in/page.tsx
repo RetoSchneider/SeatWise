@@ -1,3 +1,4 @@
+import { safeCallbackUrl } from "@/modules/identity/callback-url";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -21,10 +22,7 @@ export default async function SignInPage({
     redirect("/account");
   }
   const requestedCallback = (await searchParams).callbackURL;
-  const callbackUrl =
-    requestedCallback?.startsWith("/") && !requestedCallback.startsWith("//")
-      ? requestedCallback
-      : "/account";
+  const callbackUrl = safeCallbackUrl(requestedCallback);
 
   return (
     <div className="mx-auto w-full max-w-md px-4 py-16 sm:px-6">

@@ -73,10 +73,6 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
-    cookieCache: {
-      enabled: true,
-      maxAge: 60 * 5,
-    },
   },
   rateLimit: {
     enabled: true,
@@ -85,11 +81,11 @@ export const auth = betterAuth({
   },
   advanced: {
     cookiePrefix: "seatwise",
-    useSecureCookies: env.NODE_ENV === "production",
+    useSecureCookies: new URL(env.BETTER_AUTH_URL).protocol === "https:",
     defaultCookieAttributes: {
       httpOnly: true,
       sameSite: "lax",
-      secure: env.NODE_ENV === "production",
+      secure: new URL(env.BETTER_AUTH_URL).protocol === "https:",
     },
   },
   onAPIError: {

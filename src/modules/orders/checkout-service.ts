@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { z } from "zod";
 
 import { Prisma } from "@/generated/prisma/client";
@@ -10,6 +12,7 @@ import {
   type IdentifierGenerator,
 } from "@/shared/domain/identifiers";
 import { database } from "@/shared/infrastructure/database";
+import { serializableTransaction } from "@/shared/infrastructure/transaction";
 import { recordAuditEvent } from "@/modules/audit/audit-service";
 import { notificationService } from "@/modules/notifications/notification-service";
 import {
@@ -56,6 +59,9 @@ export async function checkout(
   dependencies: CheckoutDependencies = defaultDependencies,
 ) {
   const now = dependencies.clock.now();
+  const requestHash = createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex");
   await expireReservations(dependencies.clock);
 
   let order = await database.order.findUnique({
@@ -69,6 +75,7 @@ export async function checkout(
         userId,
         input.reservationId,
         idempotencyKey,
+        requestHash,
         now,
       );
     } catch (error) {
@@ -94,7 +101,17 @@ export async function checkout(
     );
   }
 
-  if (order.status === "PAID") {
+  if (
+    order.reservationId !== input.reservationId ||
+    (order.requestHash !== null && order.requestHash !== requestHash)
+  ) {
+    throw conflict(
+      "CONFLICT",
+      "This idempotency key belongs to a different checkout request",
+    );
+  }
+
+  if (["PAID", "REFUNDED", "PARTIALLY_REFUNDED"].includes(order.status)) {
     return toCheckoutResult(order);
   }
   if (order.status === "PAYMENT_FAILED") {
@@ -153,156 +170,166 @@ async function prepareOrder(
   userId: string,
   reservationId: string,
   idempotencyKey: string,
+  requestHash: string,
   now: Date,
 ) {
-  return database.$transaction(
-    async (client) => {
-      await expireWithinTransaction(client, now, 100);
+  return serializableTransaction(async (client) => {
+    await expireWithinTransaction(client, now, 100);
 
-      const reservation = await client.reservation.findFirst({
-        where: { id: reservationId, userId },
-        include: {
-          items: {
-            include: {
-              ticketType: true,
-              seatInventory: {
-                include: {
-                  seat: {
-                    include: { row: { include: { section: true } } },
-                  },
+    const reservation = await client.reservation.findFirst({
+      where: { id: reservationId, userId },
+      include: {
+        items: {
+          include: {
+            ticketType: true,
+            seatInventory: {
+              include: {
+                seat: {
+                  include: { row: { include: { section: true } } },
                 },
               },
             },
           },
-          cart: { include: { promotionCode: true } },
-          performance: { include: { event: true } },
         },
-      });
+        cart: { include: { promotionCode: true } },
+        performance: { include: { event: true } },
+      },
+    });
 
-      if (!reservation?.cart) {
-        throw notFound("Reservation not found");
-      }
-      if (reservation.status !== "ACTIVE" || reservation.expiresAt <= now) {
-        throw conflict("RESERVATION_EXPIRED", "This reservation has expired");
-      }
-      if (reservation.items.length === 0) {
-        throw conflict("CONFLICT", "The reservation is empty");
-      }
-
-      for (const item of reservation.items) {
-        if (
-          item.unitPriceCents !== item.ticketType.priceCents ||
-          item.currency !== item.ticketType.currency
-        ) {
-          throw conflict(
-            "CONFLICT",
-            "Ticket prices changed. Release this reservation and select tickets again.",
-          );
-        }
-        if (
-          item.seatInventory &&
-          (item.seatInventory.state !== "RESERVED" ||
-            item.seatInventory.activeReservationId !== reservation.id ||
-            item.seatInventory.reservedUntil === null ||
-            item.seatInventory.reservedUntil <= now)
-        ) {
-          throw conflict(
-            "INVENTORY_UNAVAILABLE",
-            "A reserved seat is no longer available",
-          );
-        }
-      }
-
-      const subtotalCents = reservation.items.reduce(
-        (total, item) => total + item.quantity * item.unitPriceCents,
-        0,
+    if (!reservation?.cart) {
+      throw notFound("Reservation not found");
+    }
+    if (reservation.status !== "ACTIVE" || reservation.expiresAt <= now) {
+      throw conflict("RESERVATION_EXPIRED", "This reservation has expired");
+    }
+    if (
+      reservation.performance.event.status !== "PUBLISHED" ||
+      reservation.performance.status !== "SCHEDULED" ||
+      reservation.performance.salesStartAt > now ||
+      reservation.performance.salesEndAt <= now
+    ) {
+      throw conflict(
+        "INVENTORY_UNAVAILABLE",
+        "Tickets are not currently on sale",
       );
-      const promotion = reservation.cart.promotionCode
-        ? await validatePromotion(
-            {
-              code: reservation.cart.promotionCode.code,
-              userId,
-              organizerId: reservation.performance.event.organizerId,
-              eventId: reservation.performance.event.id,
-              subtotalCents,
-              now,
-            },
-            client,
-          )
-        : undefined;
-      const price = calculatePrice(
-        reservation.items,
-        reservation.items[0]?.currency ?? "USD",
-        promotion,
-      );
+    }
+    if (reservation.items.length === 0) {
+      throw conflict("CONFLICT", "The reservation is empty");
+    }
 
-      const claimed = await client.reservation.updateMany({
-        where: { id: reservation.id, status: "ACTIVE", expiresAt: { gt: now } },
-        data: { status: "CHECKOUT_PENDING" },
-      });
-      if (claimed.count !== 1) {
-        throw conflict("RESERVATION_EXPIRED", "This reservation has expired");
+    for (const item of reservation.items) {
+      if (
+        item.unitPriceCents !== item.ticketType.priceCents ||
+        item.currency !== item.ticketType.currency
+      ) {
+        throw conflict(
+          "CONFLICT",
+          "Ticket prices changed. Release this reservation and select tickets again.",
+        );
       }
+      if (
+        item.seatInventory &&
+        (item.seatInventory.state !== "RESERVED" ||
+          item.seatInventory.activeReservationId !== reservation.id ||
+          item.seatInventory.reservedUntil === null ||
+          item.seatInventory.reservedUntil <= now)
+      ) {
+        throw conflict(
+          "INVENTORY_UNAVAILABLE",
+          "A reserved seat is no longer available",
+        );
+      }
+    }
 
-      const order = await client.order.create({
-        data: {
-          orderNumber: createDisplayNumber("SW", now),
-          userId,
-          organizerId: reservation.performance.event.organizerId,
-          performanceId: reservation.performanceId,
-          reservationId: reservation.id,
-          promotionCodeId: promotion?.id,
-          idempotencyKey,
-          currency: price.currency,
-          subtotalCents: price.subtotalCents,
-          discountCents: price.discountCents,
-          feeCents: price.feeCents,
-          totalCents: price.totalCents,
-          lines: {
-            create: reservation.items.map((item) => ({
-              performanceId: reservation.performanceId,
-              ticketTypeId: item.ticketTypeId,
-              reservationItemId: item.id,
-              description: item.seatInventory
-                ? `${item.ticketType.name} · ${item.seatInventory.seat.row.section.name}, row ${item.seatInventory.seat.row.label}, seat ${item.seatInventory.seat.label}`
-                : item.ticketType.name,
-              quantity: item.quantity,
-              unitPriceCents: item.unitPriceCents,
-              totalCents: item.quantity * item.unitPriceCents,
-            })),
+    const subtotalCents = reservation.items.reduce(
+      (total, item) => total + item.quantity * item.unitPriceCents,
+      0,
+    );
+    const promotion = reservation.cart.promotionCode
+      ? await validatePromotion(
+          {
+            code: reservation.cart.promotionCode.code,
+            userId,
+            organizerId: reservation.performance.event.organizerId,
+            eventId: reservation.performance.event.id,
+            subtotalCents,
+            now,
           },
-          paymentAttempts: {
-            create: {
-              provider: "local-simulator",
-              attemptNumber: 1,
-              amountCents: price.totalCents,
-              currency: price.currency,
-              idempotencyKey: `pay:${userId}:${idempotencyKey}`,
-            },
-          },
+          client,
+        )
+      : undefined;
+    const price = calculatePrice(
+      reservation.items,
+      reservation.items[0]?.currency ?? "USD",
+      promotion,
+    );
+
+    const claimed = await client.reservation.updateMany({
+      where: { id: reservation.id, status: "ACTIVE", expiresAt: { gt: now } },
+      data: { status: "CHECKOUT_PENDING" },
+    });
+    if (claimed.count !== 1) {
+      throw conflict("RESERVATION_EXPIRED", "This reservation has expired");
+    }
+
+    const order = await client.order.create({
+      data: {
+        orderNumber: createDisplayNumber("SW", now),
+        userId,
+        organizerId: reservation.performance.event.organizerId,
+        performanceId: reservation.performanceId,
+        reservationId: reservation.id,
+        promotionCodeId: promotion?.id,
+        idempotencyKey,
+        requestHash,
+        currency: price.currency,
+        subtotalCents: price.subtotalCents,
+        discountCents: price.discountCents,
+        feeCents: price.feeCents,
+        totalCents: price.totalCents,
+        lines: {
+          create: reservation.items.map((item) => ({
+            performanceId: reservation.performanceId,
+            ticketTypeId: item.ticketTypeId,
+            reservationItemId: item.id,
+            description: item.seatInventory
+              ? `${item.ticketType.name} · ${item.seatInventory.seat.row.section.name}, row ${item.seatInventory.seat.row.label}, seat ${item.seatInventory.seat.label}`
+              : item.ticketType.name,
+            quantity: item.quantity,
+            unitPriceCents: item.unitPriceCents,
+            totalCents: item.quantity * item.unitPriceCents,
+          })),
         },
-        include: checkoutInclude,
-      });
-
-      await recordAuditEvent(
-        {
-          actorUserId: userId,
-          action: "ORDER_CHECKOUT_STARTED",
-          entityType: "Order",
-          entityId: order.id,
-          metadata: {
-            orderNumber: order.orderNumber,
-            totalCents: order.totalCents,
-            currency: order.currency,
+        paymentAttempts: {
+          create: {
+            provider: "local-simulator",
+            attemptNumber: 1,
+            amountCents: price.totalCents,
+            currency: price.currency,
+            idempotencyKey: `pay:${userId}:${idempotencyKey}`,
           },
         },
-        client,
-      );
+      },
+      include: checkoutInclude,
+    });
 
-      return order;
-    },
-    { isolationLevel: "Serializable" },
-  );
+    await recordAuditEvent(
+      {
+        actorUserId: userId,
+        action: "ORDER_CHECKOUT_STARTED",
+        entityType: "Order",
+        entityId: order.id,
+        metadata: {
+          orderNumber: order.orderNumber,
+          totalCents: order.totalCents,
+          currency: order.currency,
+        },
+      },
+      client,
+    );
+
+    return order;
+  });
 }
 
 async function completePayment(
@@ -313,89 +340,88 @@ async function completePayment(
 ) {
   const now = dependencies.clock.now();
 
-  return database.$transaction(
-    async (client) => {
-      const order = await client.order.findUnique({
+  return serializableTransaction(async (client) => {
+    const order = await client.order.findUnique({
+      where: { id: orderId },
+      include: {
+        ...checkoutInclude,
+        reservation: { include: { items: true, cart: true } },
+      },
+    });
+    if (!order) {
+      throw notFound("Order not found");
+    }
+    if (order.status === "PAID") {
+      return order;
+    }
+
+    const claimed = await client.paymentAttempt.updateMany({
+      where: { id: paymentAttemptId, status: "PROCESSING" },
+      data: {
+        status: "SUCCEEDED",
+        providerReference: outcome.providerReference,
+        completedAt: now,
+      },
+    });
+    if (claimed.count !== 1) {
+      const completed = await client.order.findUnique({
         where: { id: orderId },
         include: {
           ...checkoutInclude,
           reservation: { include: { items: true, cart: true } },
         },
       });
-      if (!order) {
+      if (!completed) {
         throw notFound("Order not found");
       }
-      if (order.status === "PAID") {
-        return order;
-      }
+      return completed;
+    }
 
-      const claimed = await client.paymentAttempt.updateMany({
-        where: { id: paymentAttemptId, status: "PROCESSING" },
-        data: {
-          status: "SUCCEEDED",
-          providerReference: outcome.providerReference,
-          completedAt: now,
-        },
-      });
-      if (claimed.count !== 1) {
-        const completed = await client.order.findUnique({
-          where: { id: orderId },
-          include: {
-            ...checkoutInclude,
-            reservation: { include: { items: true, cart: true } },
-          },
-        });
-        if (!completed) {
-          throw notFound("Order not found");
-        }
-        return completed;
-      }
+    if (order.reservation.status !== "CHECKOUT_PENDING") {
+      throw conflict(
+        "RESERVATION_EXPIRED",
+        "The reservation changed while payment was processing",
+      );
+    }
 
-      if (order.reservation.status !== "CHECKOUT_PENDING") {
-        throw conflict(
-          "RESERVATION_EXPIRED",
-          "The reservation changed while payment was processing",
+    const linesByReservationItem = new Map(
+      order.lines.map((line) => [line.reservationItemId, line]),
+    );
+    const tickets: Prisma.TicketCreateManyInput[] = [];
+
+    for (const item of order.reservation.items) {
+      const line = linesByReservationItem.get(item.id);
+      if (!line) {
+        throw new ApplicationError(
+          "INTERNAL_ERROR",
+          "An order line is missing",
+          500,
         );
       }
 
-      const linesByReservationItem = new Map(
-        order.lines.map((line) => [line.reservationItemId, line]),
-      );
-      const tickets: Prisma.TicketCreateManyInput[] = [];
-
-      for (const item of order.reservation.items) {
-        const line = linesByReservationItem.get(item.id);
-        if (!line) {
-          throw new ApplicationError(
-            "INTERNAL_ERROR",
-            "An order line is missing",
-            500,
+      if (item.seatInventoryId) {
+        const sold = await client.seatInventory.updateMany({
+          where: {
+            id: item.seatInventoryId,
+            state: "RESERVED",
+            activeReservationId: order.reservationId,
+          },
+          data: {
+            state: "SOLD",
+            activeReservationId: null,
+            reservedUntil: null,
+            soldOrderLineId: line.id,
+            version: { increment: 1 },
+          },
+        });
+        if (sold.count !== 1) {
+          throw conflict(
+            "INVENTORY_UNAVAILABLE",
+            "A reserved seat could not be completed",
           );
         }
-
-        if (item.seatInventoryId) {
-          const sold = await client.seatInventory.updateMany({
-            where: {
-              id: item.seatInventoryId,
-              state: "RESERVED",
-              activeReservationId: order.reservationId,
-            },
-            data: {
-              state: "SOLD",
-              activeReservationId: null,
-              reservedUntil: null,
-              soldOrderLineId: line.id,
-              version: { increment: 1 },
-            },
-          });
-          if (sold.count !== 1) {
-            throw conflict(
-              "INVENTORY_UNAVAILABLE",
-              "A reserved seat could not be completed",
-            );
-          }
-        } else {
-          const updated = await client.$queryRaw<Array<{ id: string }>>`
+      } else {
+        const updated = await client.$queryRaw<Array<{ id: string }>>`
             UPDATE "general_admission_inventory"
             SET "reserved" = "reserved" - ${item.quantity},
                 "sold" = "sold" + ${item.quantity},
@@ -405,83 +431,77 @@ async function completePayment(
               AND "reserved" >= ${item.quantity}
             RETURNING "id"
           `;
-          if (updated.length !== 1) {
-            throw conflict(
-              "INVENTORY_UNAVAILABLE",
-              "General-admission inventory could not be completed",
-            );
-          }
-        }
-
-        for (
-          let ticketIndex = 0;
-          ticketIndex < item.quantity;
-          ticketIndex += 1
-        ) {
-          tickets.push({
-            ticketNumber: createDisplayNumber("TKT", now),
-            qrToken: dependencies.identifiers.token(),
-            orderId: order.id,
-            orderLineId: line.id,
-            userId: order.userId,
-            performanceId: order.performanceId,
-            seatId: item.seatInventoryId
-              ? (
-                  await client.seatInventory.findUniqueOrThrow({
-                    where: { id: item.seatInventoryId },
-                    select: { seatId: true },
-                  })
-                ).seatId
-              : null,
-          });
+        if (updated.length !== 1) {
+          throw conflict(
+            "INVENTORY_UNAVAILABLE",
+            "General-admission inventory could not be completed",
+          );
         }
       }
 
-      await client.ticket.createMany({ data: tickets });
-      await client.order.update({
-        where: { id: order.id },
-        data: { status: "PAID", paidAt: now },
-      });
-      await client.reservation.update({
-        where: { id: order.reservationId },
-        data: { status: "CHECKED_OUT" },
-      });
-      await client.cart.updateMany({
-        where: { reservationId: order.reservationId },
-        data: { status: "CONVERTED" },
-      });
-      if (order.promotionCodeId) {
-        await client.promotionRedemption.create({
-          data: {
-            promotionCodeId: order.promotionCodeId,
-            userId: order.userId,
-            orderId: order.id,
-            discountCents: order.discountCents,
-          },
+      for (let ticketIndex = 0; ticketIndex < item.quantity; ticketIndex += 1) {
+        tickets.push({
+          ticketNumber: createDisplayNumber("TKT", now),
+          qrToken: dependencies.identifiers.token(),
+          orderId: order.id,
+          orderLineId: line.id,
+          userId: order.userId,
+          performanceId: order.performanceId,
+          seatId: item.seatInventoryId
+            ? (
+                await client.seatInventory.findUniqueOrThrow({
+                  where: { id: item.seatInventoryId },
+                  select: { seatId: true },
+                })
+              ).seatId
+            : null,
         });
       }
-      await recordAuditEvent(
-        {
-          actorUserId: order.userId,
-          action: "ORDER_PAID",
-          entityType: "Order",
-          entityId: order.id,
-          metadata: {
-            orderNumber: order.orderNumber,
-            paymentAttemptId,
-            ticketCount: tickets.length,
-          },
-        },
-        client,
-      );
+    }
 
-      return client.order.findUniqueOrThrow({
-        where: { id: order.id },
-        include: checkoutInclude,
+    await client.ticket.createMany({ data: tickets });
+    await client.order.update({
+      where: { id: order.id },
+      data: { status: "PAID", paidAt: now },
+    });
+    await client.reservation.update({
+      where: { id: order.reservationId },
+      data: { status: "CHECKED_OUT" },
+    });
+    await client.cart.updateMany({
+      where: { reservationId: order.reservationId },
+      data: { status: "CONVERTED" },
+    });
+    if (order.promotionCodeId) {
+      await client.promotionRedemption.create({
+        data: {
+          promotionCodeId: order.promotionCodeId,
+          userId: order.userId,
+          orderId: order.id,
+          discountCents: order.discountCents,
+        },
       });
-    },
-    { isolationLevel: "Serializable" },
-  );
+    }
+    await recordAuditEvent(
+      {
+        actorUserId: order.userId,
+        action: "ORDER_PAID",
+        entityType: "Order",
+        entityId: order.id,
+        metadata: {
+          orderNumber: order.orderNumber,
+          paymentAttemptId,
+          ticketCount: tickets.length,
+        },
+      },
+      client,
+    );
+
+    return client.order.findUniqueOrThrow({
+      where: { id: order.id },
+      include: checkoutInclude,
+    });
+  });
 }
 
 async function failPayment(

@@ -32,8 +32,6 @@
   box-sizing: border-box;
 }
 
-/* Reserve the scrollbar gutter so pages whose translated content changes
-   the document height do not shift horizontally on language switch. */
 html {
   scrollbar-gutter: stable;
 }

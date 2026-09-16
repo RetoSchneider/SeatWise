@@ -49,9 +49,30 @@ export async function listPublishedEvents(query: EventCatalogQuery) {
       : {}),
   };
 
+  const scheduledEvents =
+    query.sort === "date"
+      ? await database.performance.groupBy({
+          by: ["eventId"],
+          where: {
+            event: where,
+            status: "SCHEDULED",
+            startsAt: { gt: now },
+            salesEndAt: { gt: now },
+          },
+          _min: { startsAt: true },
+          orderBy: [{ _min: { startsAt: "asc" } }, { eventId: "asc" }],
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+        })
+      : null;
   const [events, total] = await Promise.all([
     database.event.findMany({
-      where,
+      where: scheduledEvents
+        ? {
+            ...where,
+            id: { in: scheduledEvents.map((event) => event.eventId) },
+          }
+        : where,
       include: {
         venue: true,
         performances: {
@@ -70,11 +91,8 @@ export async function listPublishedEvents(query: EventCatalogQuery) {
           },
         },
       },
-      orderBy:
-        query.sort === "title"
-          ? { title: "asc" }
-          : { performances: { _count: "desc" } },
-      skip: (query.page - 1) * query.pageSize,
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      skip: scheduledEvents ? 0 : (query.page - 1) * query.pageSize,
       take: query.pageSize,
     }),
     database.event.count({ where }),

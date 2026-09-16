@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./tests/support/environment";
 
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    include: ["src/**/*.test.ts"],
     fileParallelism: false,
   },
 });

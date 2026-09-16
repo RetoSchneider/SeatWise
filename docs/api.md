@@ -63,9 +63,10 @@ defaults to authentication routes.
 `POST /api/v1/checkout` requires an `Idempotency-Key` header from 8 to 100
 characters. Keys are scoped to the current user. The first request establishes
 the order and payment attempt; repeated requests return or continue that same
-state and never create a second order for the key.
+state and never create a second order for the key. New orders store a hash of
+the validated checkout request and reject the same key with different inputs.
 
-A failed payment is durable. A deliberate retry uses a new key while the
+A lost browser response is retried with the same key. A failed payment is durable. A deliberate retry uses a new key while the
 reservation is still active. Provider references and attempts are retained for
 auditability; payment simulator tokens are not stored.
 

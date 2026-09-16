@@ -16,6 +16,7 @@ interface VenueOption {
 }
 
 export function CreateEventForm({ venues }: { venues: VenueOption[] }) {
+  const common = useTranslations("common");
   const t = useTranslations("organizer.createEvent");
   const router = useRouter();
   const [venueId, setVenueId] = useState(venues[0]?.id ?? "");
@@ -24,67 +25,72 @@ export function CreateEventForm({ venues }: { venues: VenueOption[] }) {
   const venue = venues.find((item) => item.id === venueId);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const sectionId = String(form.get("sectionId"));
-    const section = venue?.sections.find((item) => item.id === sectionId);
-    const toUtc = (name: string) => {
-      const value = String(form.get(name) ?? "");
-      return value ? new Date(value).toISOString() : undefined;
-    };
-    const response = await fetch("/api/v1/organizer/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        venueId,
-        title: form.get("title"),
-        summary: form.get("summary"),
-        description: form.get("description"),
-        category: form.get("category"),
-        refundPolicy: form.get("refundPolicy"),
-        performance: {
-          startsAt: toUtc("startsAt"),
-          doorsAt: toUtc("doorsAt"),
-          endsAt: toUtc("endsAt"),
-          salesStartAt: toUtc("salesStartAt"),
-          salesEndAt: toUtc("salesEndAt"),
-          reservationDurationMinutes: Number(
-            form.get("reservationDurationMinutes"),
-          ),
-        },
-        ticketTypes: [
-          {
-            sectionId,
-            name: form.get("ticketTypeName"),
-            description: form.get("ticketTypeDescription") || undefined,
-            priceCents: Math.round(Number(form.get("price")) * 100),
-            currency: form.get("currency"),
-            minPerOrder: 1,
-            maxPerOrder: 8,
-            capacity:
-              section?.type === "GENERAL_ADMISSION"
-                ? Number(form.get("capacity"))
-                : undefined,
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const sectionId = String(form.get("sectionId"));
+      const section = venue?.sections.find((item) => item.id === sectionId);
+      const toUtc = (name: string) => {
+        const value = String(form.get(name) ?? "");
+        return value ? new Date(value).toISOString() : undefined;
+      };
+      const response = await fetch("/api/v1/organizer/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          venueId,
+          title: form.get("title"),
+          summary: form.get("summary"),
+          description: form.get("description"),
+          category: form.get("category"),
+          refundPolicy: form.get("refundPolicy"),
+          performance: {
+            startsAt: toUtc("startsAt"),
+            doorsAt: toUtc("doorsAt"),
+            endsAt: toUtc("endsAt"),
+            salesStartAt: toUtc("salesStartAt"),
+            salesEndAt: toUtc("salesEndAt"),
+            reservationDurationMinutes: Number(
+              form.get("reservationDurationMinutes"),
+            ),
           },
-        ],
-      }),
-    });
-    const payload = (await response.json()) as {
-      error?: { message?: string; details?: Array<{ message: string }> };
-    };
-    if (!response.ok) {
-      setError(
-        payload.error?.details?.[0]?.message ??
-          payload.error?.message ??
-          t("failed"),
-      );
+          ticketTypes: [
+            {
+              sectionId,
+              name: form.get("ticketTypeName"),
+              description: form.get("ticketTypeDescription") || undefined,
+              priceCents: Math.round(Number(form.get("price")) * 100),
+              currency: form.get("currency"),
+              minPerOrder: 1,
+              maxPerOrder: 8,
+              capacity:
+                section?.type === "GENERAL_ADMISSION"
+                  ? Number(form.get("capacity"))
+                  : undefined,
+            },
+          ],
+        }),
+      });
+      const payload = (await response.json()) as {
+        error?: { message?: string; details?: Array<{ message: string }> };
+      };
+      if (!response.ok) {
+        setError(
+          payload.error?.details?.[0]?.message ??
+            payload.error?.message ??
+            t("failed"),
+        );
+        return;
+      }
+      router.push("/organizer");
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.push("/organizer");
-    router.refresh();
   }
 
   if (venues.length === 0) {

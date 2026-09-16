@@ -1,7 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { Clock } from "@/shared/domain/clock";
 import { systemClock } from "@/shared/domain/clock";
-import { database } from "@/shared/infrastructure/database";
+import { serializableTransaction } from "@/shared/infrastructure/transaction";
 
 async function expireWithinTransaction(
   client: Prisma.TransactionClient,
@@ -85,9 +85,8 @@ export function expireReservations(
   clock: Clock = systemClock,
   batchSize = 100,
 ) {
-  return database.$transaction(
-    (client) => expireWithinTransaction(client, clock.now(), batchSize),
-    { isolationLevel: "Serializable" },
+  return serializableTransaction((client) =>
+    expireWithinTransaction(client, clock.now(), batchSize),
   );
 }
 

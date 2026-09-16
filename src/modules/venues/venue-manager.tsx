@@ -18,6 +18,7 @@ interface VenueSummary {
 }
 
 export function VenueManager({ venues }: { venues: VenueSummary[] }) {
+  const common = useTranslations("common");
   const t = useTranslations("organizer.venueManager");
   const router = useRouter();
   const [error, setError] = useState("");
@@ -39,82 +40,92 @@ export function VenueManager({ venues }: { venues: VenueSummary[] }) {
   }
 
   async function createVenue(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/v1/organizer/venues", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        name: form.get("name"),
-        description: form.get("description"),
-        addressLine1: form.get("addressLine1"),
-        city: form.get("city"),
-        region: form.get("region"),
-        postalCode: form.get("postalCode"),
-        countryCode: form.get("countryCode"),
-        timezone: form.get("timezone"),
-      }),
-    });
-    const payload: unknown = await response.json();
-    if (!response.ok) {
-      setError(formError(payload));
-      setPending(false);
-      return;
-    }
-    event.currentTarget.reset();
-    setPending(false);
-    router.refresh();
-  }
-
-  async function createSection(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const venueId = String(form.get("venueId"));
-    const type = String(form.get("type"));
-    const rowCount = Number(form.get("rowCount"));
-    const seatsPerRow = Number(form.get("seatsPerRow"));
-    const capacity =
-      type === "RESERVED"
-        ? rowCount * seatsPerRow
-        : Number(form.get("capacity"));
-    const rows =
-      type === "RESERVED"
-        ? Array.from({ length: rowCount }, (_, rowIndex) => ({
-            label: String.fromCharCode(65 + rowIndex),
-            seats: Array.from({ length: seatsPerRow }, (_, seatIndex) => ({
-              label: String(seatIndex + 1),
-              accessible: rowIndex === 0 && seatIndex < 2,
-              companionSeat: rowIndex === 0 && seatIndex === 2,
-            })),
-          }))
-        : [];
-
-    const response = await fetch(
-      `/api/v1/organizer/venues/${venueId}/sections`,
-      {
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      const response = await fetch("/api/v1/organizer/venues", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          name: form.get("sectionName"),
-          type,
-          capacity,
-          rows,
+          name: form.get("name"),
+          description: form.get("description"),
+          addressLine1: form.get("addressLine1"),
+          city: form.get("city"),
+          region: form.get("region"),
+          postalCode: form.get("postalCode"),
+          countryCode: form.get("countryCode"),
+          timezone: form.get("timezone"),
         }),
-      },
-    );
-    const payload: unknown = await response.json();
-    if (!response.ok) {
-      setError(formError(payload));
+      });
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        setError(formError(payload));
+        return;
+      }
+      formElement.reset();
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    event.currentTarget.reset();
-    setPending(false);
-    router.refresh();
+  }
+
+  async function createSection(event: FormEvent<HTMLFormElement>) {
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const formElement = event.currentTarget;
+      const form = new FormData(formElement);
+      const venueId = String(form.get("venueId"));
+      const type = String(form.get("type"));
+      const rowCount = Number(form.get("rowCount"));
+      const seatsPerRow = Number(form.get("seatsPerRow"));
+      const capacity =
+        type === "RESERVED"
+          ? rowCount * seatsPerRow
+          : Number(form.get("capacity"));
+      const rows =
+        type === "RESERVED"
+          ? Array.from({ length: rowCount }, (_, rowIndex) => ({
+              label: String.fromCharCode(65 + rowIndex),
+              seats: Array.from({ length: seatsPerRow }, (_, seatIndex) => ({
+                label: String(seatIndex + 1),
+                accessible: rowIndex === 0 && seatIndex < 2,
+                companionSeat: rowIndex === 0 && seatIndex === 2,
+              })),
+            }))
+          : [];
+
+      const response = await fetch(
+        `/api/v1/organizer/venues/${venueId}/sections`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: form.get("sectionName"),
+            type,
+            capacity,
+            rows,
+          }),
+        },
+      );
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        setError(formError(payload));
+        return;
+      }
+      formElement.reset();
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
+      setPending(false);
+    }
   }
 
   const venueFields: Array<[string, string, string | undefined]> = [

@@ -8,31 +8,37 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/modules/identity/auth-client";
 
 export function SignInForm({ callbackUrl }: { callbackUrl: string }) {
+  const common = useTranslations("common");
   const t = useTranslations("auth");
   const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const email = String(form.get("email"));
-    const password = String(form.get("password"));
-    const result = await authClient.signIn.email({
-      email,
-      password,
-      rememberMe: true,
-    });
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const email = String(form.get("email"));
+      const password = String(form.get("password"));
+      const result = await authClient.signIn.email({
+        email,
+        password,
+        rememberMe: true,
+      });
 
-    if (result.error) {
-      setError(t("signIn.invalid"));
+      if (result.error) {
+        setError(t("signIn.invalid"));
+        return;
+      }
+      router.push(callbackUrl);
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.push(callbackUrl);
-    router.refresh();
   }
 
   return (

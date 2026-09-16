@@ -11,31 +11,37 @@ export function RefundReviewButtons({
   refundRequestId: string;
   scope: "organizer" | "admin";
 }) {
+  const common = useTranslations("common");
   const t = useTranslations("refundReview");
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
   async function decide(decision: "APPROVE" | "REJECT") {
-    setPending(true);
-    setError("");
-    const response = await fetch(
-      `/api/v1/${scope}/refunds/${refundRequestId}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ decision }),
-      },
-    );
-    if (!response.ok) {
-      const payload = (await response.json()) as {
-        error?: { message?: string };
-      };
-      setError(payload.error?.message ?? t("failed"));
+    try {
+      setPending(true);
+      setError("");
+      const response = await fetch(
+        `/api/v1/${scope}/refunds/${refundRequestId}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ decision }),
+        },
+      );
+      if (!response.ok) {
+        const payload = (await response.json()) as {
+          error?: { message?: string };
+        };
+        setError(payload.error?.message ?? t("failed"));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.refresh();
   }
 
   return (

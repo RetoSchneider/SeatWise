@@ -1,0 +1,44 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+      PLAYWRIGHT_PRODUCTION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://seatwise:seatwise@127.0.0.1:55432/seatwise_test
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm test:db:up
+      - run: pnpm test:db:prepare
+      - run: pnpm check
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - run: pnpm test:db:down
+        if: always()

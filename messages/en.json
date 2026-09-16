@@ -8,7 +8,8 @@
     "saving": "Saving…",
     "pageOf": "Page {page} of {total}",
     "system": "System",
-    "notApplicable": "Not applicable"
+    "notApplicable": "Not applicable",
+    "requestFailed": "The request could not be completed. Please try again."
   },
   "language": {
     "label": "Language",

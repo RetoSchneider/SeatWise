@@ -1,0 +1,24 @@
+name: seatwise-test
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: seatwise_test
+      POSTGRES_USER: seatwise
+      POSTGRES_PASSWORD: seatwise
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seatwise -d seatwise_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    ports:
+      - "127.0.0.1:11025:1025"
+      - "127.0.0.1:18025:8025"

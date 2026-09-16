@@ -47,6 +47,7 @@ interface ApiError {
 }
 
 export function SeatSelector({ performances, signedIn }: SeatSelectorProps) {
+  const common = useTranslations("common");
   const t = useTranslations("seatSelector");
   const locale = useLocale();
   const router = useRouter();
@@ -106,43 +107,48 @@ export function SeatSelector({ performances, signedIn }: SeatSelectorProps) {
   }
 
   async function reserve() {
-    if (!signedIn) {
-      router.push(
-        `/sign-in?callbackURL=${encodeURIComponent(window.location.pathname)}`,
-      );
-      return;
-    }
-    if (!performance || totalQuantity === 0) {
-      setError(t("chooseAtLeastOne"));
-      return;
-    }
+    try {
+      if (!signedIn) {
+        router.push(
+          `/sign-in?callbackURL=${encodeURIComponent(window.location.pathname)}`,
+        );
+        return;
+      }
+      if (!performance || totalQuantity === 0) {
+        setError(t("chooseAtLeastOne"));
+        return;
+      }
 
-    setPending(true);
-    setError("");
-    const response = await fetch("/api/v1/reservations", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        performanceId: performance.id,
-        seatInventoryIds: selectedSeats,
-        generalAdmission: Object.entries(quantities)
-          .filter(([, quantity]) => quantity > 0)
-          .map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
-      }),
-    });
-    const payload = (await response.json()) as
-      { data: { id: string } } | ApiError;
-    if (!response.ok || !("data" in payload)) {
-      setError(
-        "error" in payload && payload.error?.message
-          ? payload.error.message
-          : t("reservationFailed"),
-      );
+      setPending(true);
+      setError("");
+      const response = await fetch("/api/v1/reservations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          performanceId: performance.id,
+          seatInventoryIds: selectedSeats,
+          generalAdmission: Object.entries(quantities)
+            .filter(([, quantity]) => quantity > 0)
+            .map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
+        }),
+      });
+      const payload = (await response.json()) as
+        { data: { id: string } } | ApiError;
+      if (!response.ok || !("data" in payload)) {
+        setError(
+          "error" in payload && payload.error?.message
+            ? payload.error.message
+            : t("reservationFailed"),
+        );
+        router.refresh();
+        return;
+      }
+      router.push(`/cart/${payload.data.id}`);
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      router.refresh();
-      return;
     }
-    router.push(`/cart/${payload.data.id}`);
   }
 
   if (!performance) {

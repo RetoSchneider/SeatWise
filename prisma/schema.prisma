@@ -530,6 +530,7 @@ model Order {
   reservationId       String
   promotionCodeId     String?
   idempotencyKey      String
+  requestHash         String?
   status              OrderStatus          @default(PENDING_PAYMENT)
   currency            String               @db.Char(3)
   subtotalCents       Int

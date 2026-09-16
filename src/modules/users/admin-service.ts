@@ -195,6 +195,9 @@ export async function moderateEvent(
     throw notFound("Event not found");
   }
   const status = action === "CANCEL" ? "CANCELLED" : "UNPUBLISHED";
+  if (event.status === "CANCELLED") {
+    throw conflict("CONFLICT", "A cancelled event cannot change status");
+  }
   const updated = await database.$transaction(async (client) => {
     const changed = await client.event.update({
       where: { id: event.id },

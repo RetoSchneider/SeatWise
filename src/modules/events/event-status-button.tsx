@@ -13,31 +13,40 @@ export function EventStatusButton({
   action: "PUBLISH" | "UNPUBLISH" | "CANCEL";
   scope?: "organizer" | "admin";
 }) {
+  const common = useTranslations("common");
   const t = useTranslations("organizer.eventStatus");
   const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   async function update() {
-    if (action === "CANCEL" && !window.confirm(t("confirmCancel"))) {
-      return;
-    }
-    setPending(true);
-    setError("");
-    const response = await fetch(`/api/v1/${scope}/events/${eventId}/status`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    if (!response.ok) {
-      const payload = (await response.json()) as {
-        error?: { message?: string };
-      };
-      setError(payload.error?.message ?? t("failed"));
+    try {
+      if (action === "CANCEL" && !window.confirm(t("confirmCancel"))) {
+        return;
+      }
+      setPending(true);
+      setError("");
+      const response = await fetch(
+        `/api/v1/${scope}/events/${eventId}/status`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action }),
+        },
+      );
+      if (!response.ok) {
+        const payload = (await response.json()) as {
+          error?: { message?: string };
+        };
+        setError(payload.error?.message ?? t("failed"));
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.refresh();
   }
 
   const actionLabel = {

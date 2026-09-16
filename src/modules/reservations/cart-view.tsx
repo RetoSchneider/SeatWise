@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Clock3, Tag, Trash2 } from "lucide-react";
@@ -12,6 +12,7 @@ interface CartViewProps {
     id: string;
     status: string;
     expiresAt: Date;
+    remainingSeconds: number;
     event: {
       title: string;
       slug: string;
@@ -48,13 +49,15 @@ function remainingSeconds(expiresAt: Date) {
 }
 
 export function CartView({ reservation: initialReservation }: CartViewProps) {
+  const common = useTranslations("common");
   const t = useTranslations("cart");
   const locale = useLocale();
   const router = useRouter();
   const [reservation, setReservation] = useState(initialReservation);
-  const [remaining, setRemaining] = useState(() =>
-    remainingSeconds(initialReservation.expiresAt),
+  const [remaining, setRemaining] = useState(
+    initialReservation.remainingSeconds,
   );
+  const checkoutKey = useRef<string | null>(null);
   const [paymentToken, setPaymentToken] = useState("pm_success");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -71,70 +74,94 @@ export function CartView({ reservation: initialReservation }: CartViewProps) {
   }, [reservation.expiresAt]);
 
   async function applyPromotion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const response = await fetch(
-      `/api/v1/reservations/${reservation.id}/promotion`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: String(form.get("code")) }),
-      },
-    );
-    const payload = (await response.json()) as
-      { data: CartViewProps["reservation"] } | ErrorPayload;
-    if (!response.ok || !("data" in payload)) {
-      setError(
-        "error" in payload && payload.error?.message
-          ? payload.error.message
-          : t("promotionFailed"),
+    try {
+      event.preventDefault();
+      setPending(true);
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const response = await fetch(
+        `/api/v1/reservations/${reservation.id}/promotion`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code: String(form.get("code")) }),
+        },
       );
-      return;
+      const payload = (await response.json()) as
+        { data: CartViewProps["reservation"] } | ErrorPayload;
+      if (!response.ok || !("data" in payload)) {
+        setError(
+          "error" in payload && payload.error?.message
+            ? payload.error.message
+            : t("promotionFailed"),
+        );
+        return;
+      }
+      setReservation(payload.data);
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
+      setPending(false);
     }
-    setReservation(payload.data);
   }
 
   async function release() {
-    setPending(true);
-    await fetch(`/api/v1/reservations/${reservation.id}`, {
-      method: "DELETE",
-    });
-    router.push(`/events/${reservation.event.slug}`);
-    router.refresh();
+    try {
+      setPending(true);
+      const response = await fetch(`/api/v1/reservations/${reservation.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        setError(common("requestFailed"));
+        return;
+      }
+      router.push(`/events/${reservation.event.slug}`);
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
+      setPending(false);
+    }
   }
 
   async function pay() {
-    if (remaining === 0) {
-      setError(t("expired"));
-      return;
-    }
-    setPending(true);
-    setError("");
-    const response = await fetch("/api/v1/checkout", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "idempotency-key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({
-        reservationId: reservation.id,
-        paymentToken,
-      }),
-    });
-    const payload = (await response.json()) as
-      { data: { id: string } } | ErrorPayload;
-    if (!response.ok || !("data" in payload)) {
-      setError(
-        "error" in payload && payload.error?.message
-          ? payload.error.message
-          : t("paymentFailed"),
-      );
+    try {
+      if (remaining === 0 || reservation.status !== "ACTIVE") {
+        setError(t("expired"));
+        return;
+      }
+      setPending(true);
+      setError("");
+      checkoutKey.current ??= crypto.randomUUID();
+      const response = await fetch("/api/v1/checkout", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": checkoutKey.current,
+        },
+        body: JSON.stringify({
+          reservationId: reservation.id,
+          paymentToken,
+        }),
+      });
+      const payload = (await response.json()) as
+        { data: { id: string } } | ErrorPayload;
+      if (!response.ok || !("data" in payload)) {
+        setError(
+          "error" in payload && payload.error?.message
+            ? payload.error.message
+            : t("paymentFailed"),
+        );
+        if ("error" in payload && payload.error?.details?.retryable)
+          checkoutKey.current = null;
+        return;
+      }
+      router.push(`/account/orders/${payload.data.id}?paid=1`);
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.push(`/account/orders/${payload.data.id}?paid=1`);
-    router.refresh();
   }
 
   const minutes = Math.floor(remaining / 60);
@@ -240,9 +267,12 @@ export function CartView({ reservation: initialReservation }: CartViewProps) {
             </label>
             <button
               type="submit"
+              disabled={
+                pending || remaining === 0 || reservation.status !== "ACTIVE"
+              }
               className="bg-foreground px-5 py-2 font-bold text-white"
             >
-              {t("apply")}
+              {common("apply")}
             </button>
           </form>
         </section>
@@ -333,7 +363,9 @@ export function CartView({ reservation: initialReservation }: CartViewProps) {
         <button
           type="button"
           onClick={pay}
-          disabled={pending || remaining === 0}
+          disabled={
+            pending || remaining === 0 || reservation.status !== "ACTIVE"
+          }
           className="bg-brand hover:bg-brand-dark mt-5 w-full px-4 py-3 font-bold text-white"
         >
           {pending ? t("processing") : t("payAndGet")}

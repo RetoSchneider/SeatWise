@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export function proxy(request: NextRequest) {
   const nonce = Buffer.from(randomUUID()).toString("base64");
+  const secure = request.nextUrl.protocol === "https:";
   const development = process.env.NODE_ENV === "development";
   const policy = [
     "default-src 'self'",
@@ -16,7 +17,7 @@ export function proxy(request: NextRequest) {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    ...(development ? [] : ["upgrade-insecure-requests"]),
+    ...(secure ? ["upgrade-insecure-requests"] : []),
   ].join("; ");
 
   const requestHeaders = new Headers(request.headers);
@@ -27,7 +28,7 @@ export function proxy(request: NextRequest) {
     request: { headers: requestHeaders },
   });
   response.headers.set("content-security-policy", policy);
-  if (!development) {
+  if (secure) {
     response.headers.set(
       "strict-transport-security",
       "max-age=63072000; includeSubDomains; preload",

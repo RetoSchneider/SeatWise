@@ -7,35 +7,41 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/modules/identity/auth-client";
 
 export function RegisterForm() {
+  const common = useTranslations("common");
   const t = useTranslations("auth");
   const router = useRouter();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    const form = new FormData(event.currentTarget);
-    const password = String(form.get("password"));
-    const confirmation = String(form.get("passwordConfirmation"));
-    if (password !== confirmation) {
-      setError(t("register.passwordMismatch"));
-      return;
-    }
+    try {
+      event.preventDefault();
+      setError("");
+      const form = new FormData(event.currentTarget);
+      const password = String(form.get("password"));
+      const confirmation = String(form.get("passwordConfirmation"));
+      if (password !== confirmation) {
+        setError(t("register.passwordMismatch"));
+        return;
+      }
 
-    setPending(true);
-    const result = await authClient.signUp.email({
-      name: String(form.get("name")),
-      email: String(form.get("email")),
-      password,
-    });
-    if (result.error) {
-      setError(t("register.failed"));
+      setPending(true);
+      const result = await authClient.signUp.email({
+        name: String(form.get("name")),
+        email: String(form.get("email")),
+        password,
+      });
+      if (result.error) {
+        setError(t("register.failed"));
+        return;
+      }
+      router.push("/account?registered=1");
+      router.refresh();
+    } catch {
+      setError(common("requestFailed"));
+    } finally {
       setPending(false);
-      return;
     }
-    router.push("/account?registered=1");
-    router.refresh();
   }
 
   return (

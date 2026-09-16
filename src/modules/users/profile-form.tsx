@@ -7,26 +7,32 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/modules/identity/auth-client";
 
 export function ProfileForm({ name }: { name: string }) {
+  const common = useTranslations("common");
   const t = useTranslations("profile");
   const router = useRouter();
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPending(true);
-    setStatus("");
-    const form = new FormData(event.currentTarget);
-    const result = await authClient.updateUser({
-      name: String(form.get("name")).trim(),
-    });
-    setPending(false);
-    if (result.error) {
-      setStatus(t("updateFailed"));
-      return;
+    try {
+      event.preventDefault();
+      setPending(true);
+      setStatus("");
+      const form = new FormData(event.currentTarget);
+      const result = await authClient.updateUser({
+        name: String(form.get("name")).trim(),
+      });
+      if (result.error) {
+        setStatus(t("updateFailed"));
+        return;
+      }
+      setStatus(t("updated"));
+      router.refresh();
+    } catch {
+      setStatus(common("requestFailed"));
+    } finally {
+      setPending(false);
     }
-    setStatus(t("updated"));
-    router.refresh();
   }
 
   return (

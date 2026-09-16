@@ -8,7 +8,8 @@
     "saving": "Wird gespeichert…",
     "pageOf": "Seite {page} von {total}",
     "system": "System",
-    "notApplicable": "Nicht zutreffend"
+    "notApplicable": "Nicht zutreffend",
+    "requestFailed": "Die Anfrage konnte nicht abgeschlossen werden. Bitte versuche es erneut."
   },
   "language": {
     "label": "Sprache",
