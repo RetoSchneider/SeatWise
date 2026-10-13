@@ -44,28 +44,24 @@ export function EventCard({ event }: EventCardProps) {
               aria-hidden="true"
               className="text-brand mt-0.5 size-4 shrink-0"
             />
-            <div>
-              <dt className="sr-only">{t("dateLabel")}</dt>
-              <dd>
-                {formatDateTime(
-                  event.nextPerformance,
-                  event.venue.timezone,
-                  locale,
-                )}
-              </dd>
-            </div>
+            <dt className="sr-only">{t("dateLabel")}</dt>
+            <dd>
+              {formatDateTime(
+                event.nextPerformance,
+                event.venue.timezone,
+                locale,
+              )}
+            </dd>
           </div>
           <div className="flex items-start gap-2">
             <MapPin
               aria-hidden="true"
               className="text-brand mt-0.5 size-4 shrink-0"
             />
-            <div>
-              <dt className="sr-only">{t("venueLabel")}</dt>
-              <dd>
-                {event.venue.name}, {event.venue.city}
-              </dd>
-            </div>
+            <dt className="sr-only">{t("venueLabel")}</dt>
+            <dd>
+              {event.venue.name}, {event.venue.city}
+            </dd>
           </div>
         </dl>
         <p className="text-brand mt-auto pt-5 text-sm font-bold">

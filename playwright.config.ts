@@ -40,6 +40,11 @@ export default defineConfig({
       testMatch: "ui/**/*.spec.ts",
       use: { ...devices["Desktop Safari"] },
     },
+    {
+      name: "accessibility",
+      testMatch: "a11y/**/*.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
   ],
   webServer: {
     command:

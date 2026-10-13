@@ -222,7 +222,7 @@ async function createEvents(
       status: "PUBLISHED",
       refundPolicy: "UNTIL_24_HOURS",
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-09-20T22:00:00.000Z"),
+      salesEndAt: new Date("2030-09-20T18:00:00.000Z"),
       publishedAt: new Date("2026-07-01T12:00:00.000Z"),
     },
   });
@@ -230,11 +230,11 @@ async function createEvents(
     data: {
       id: "performance_midnight_signals",
       eventId: concert.id,
-      startsAt: new Date("2030-09-21T00:00:00.000Z"),
-      doorsAt: new Date("2030-09-20T23:00:00.000Z"),
-      endsAt: new Date("2030-09-21T02:15:00.000Z"),
+      startsAt: new Date("2030-09-20T20:00:00.000Z"),
+      doorsAt: new Date("2030-09-20T19:00:00.000Z"),
+      endsAt: new Date("2030-09-20T22:15:00.000Z"),
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-09-20T22:00:00.000Z"),
+      salesEndAt: new Date("2030-09-20T18:00:00.000Z"),
       reservationDurationMinutes: 10,
     },
   });
@@ -250,7 +250,7 @@ async function createEvents(
       minPerOrder: 1,
       maxPerOrder: 8,
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-09-20T22:00:00.000Z"),
+      salesEndAt: new Date("2030-09-20T18:00:00.000Z"),
     },
   });
   const balconyTicket = await database.ticketType.create({
@@ -265,7 +265,7 @@ async function createEvents(
       minPerOrder: 1,
       maxPerOrder: 8,
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-09-20T22:00:00.000Z"),
+      salesEndAt: new Date("2030-09-20T18:00:00.000Z"),
     },
   });
   const floorSeats = await database.seat.findMany({
@@ -306,7 +306,7 @@ async function createEvents(
       status: "PUBLISHED",
       refundPolicy: "UNTIL_7_DAYS",
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-10-12T21:00:00.000Z"),
+      salesEndAt: new Date("2030-10-12T16:00:00.000Z"),
       publishedAt: new Date("2026-07-02T12:00:00.000Z"),
     },
   });
@@ -314,11 +314,11 @@ async function createEvents(
     data: {
       id: "performance_city_stories",
       eventId: stories.id,
-      startsAt: new Date("2030-10-12T23:00:00.000Z"),
-      doorsAt: new Date("2030-10-12T22:30:00.000Z"),
-      endsAt: new Date("2030-10-13T01:00:00.000Z"),
+      startsAt: new Date("2030-10-12T18:00:00.000Z"),
+      doorsAt: new Date("2030-10-12T17:30:00.000Z"),
+      endsAt: new Date("2030-10-12T20:00:00.000Z"),
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-10-12T21:00:00.000Z"),
+      salesEndAt: new Date("2030-10-12T16:00:00.000Z"),
       reservationDurationMinutes: 8,
     },
   });
@@ -334,7 +334,7 @@ async function createEvents(
       minPerOrder: 1,
       maxPerOrder: 8,
       salesStartAt: new Date("2026-01-01T00:00:00.000Z"),
-      salesEndAt: new Date("2030-10-12T21:00:00.000Z"),
+      salesEndAt: new Date("2030-10-12T16:00:00.000Z"),
     },
   });
   await database.generalAdmissionInventory.create({

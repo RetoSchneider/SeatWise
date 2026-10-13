@@ -178,7 +178,7 @@ export function listAdminEvents() {
     orderBy: { createdAt: "desc" },
     include: {
       organizer: { select: { displayName: true, status: true } },
-      venue: { select: { name: true, city: true } },
+      venue: { select: { name: true, city: true, timezone: true } },
       performances: { orderBy: { startsAt: "asc" }, take: 1 },
     },
     take: 200,

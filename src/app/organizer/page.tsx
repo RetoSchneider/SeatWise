@@ -145,7 +145,7 @@ export default async function OrganizerPage() {
                       <p className="text-muted mt-1 text-sm">
                         {event.venue.name}
                         {nextPerformance
-                          ? ` · ${formatDateTime(nextPerformance.startsAt, undefined, locale)}`
+                          ? ` · ${formatDateTime(nextPerformance.startsAt, event.venue.timezone, locale)}`
                           : ""}
                       </p>
                       <p className="text-muted mt-2 text-xs">
