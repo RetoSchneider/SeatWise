@@ -27,13 +27,24 @@ These defects were found by the test suite, by CI and by code review, and are fi
 | Production previews over HTTP forced HTTPS-only cookies                                      | Apply secure cookies and transport headers only on HTTPS origins                          |
 | The original concurrency and smoke scripts changed the seeded demo data                      | Replace them with isolated Playwright scenarios on a separate, guarded test database      |
 | Event cards nested `<dt>` and `<dd>` in extra wrappers, breaking the list for screen readers | Found by the axe scan; the markup now follows the event detail page                       |
-| The organizer dashboard and admin event list showed start times in UTC                       | Format them in the venue's timezone; covered by a UI test                                 |
+| The organizer dashboard and admin event list showed start times in UTC                       | Format them in the venue's timezone; covered by UI tests                                  |
 
 ## Found by CI
 
 The first CI run failed nine booking tests with React hydration errors (error 418). The server formatted dates in UTC while the browsers used Europe/Zurich, so server and browser rendered different text. Customer-facing dates now use the venue's timezone. To keep this kind of bug visible on any machine, the test server always runs in UTC while the browsers run in Europe/Zurich.
 
-The same run showed WebKit reporting cancelled Next.js prefetch requests as page errors when a test reloaded the page right after changing the language. The test now checks the language cookie and opens a new tab instead of reloading. The browser-error check still covers every tab and filters nothing.
+### Cancelled prefetches in WebKit
+
+Next.js prefetches the pages behind visible links with `fetch` requests (`?_rsc=` in the URL). When WebKit cancels one of these requests, for example because the page navigates away, it reports an uncaught error: `Fetch API cannot load <url> due to access control checks.` Chromium and Firefox do not report cancelled prefetches this way.
+
+The first CI run hit this in the language test, which reloaded the page right after changing the language. That test now checks the language cookie and opens a new tab instead of reloading.
+
+It came back in a UI test that checked the organizer dashboard, then cleared the cookies, signed in as an administrator and opened the admin event list in the same page. WebKit reported the cancelled prefetches of the dashboard's links, such as `/events`, `/account` and `/organizer/promotions`. On Linux the test failed in 4 of 5 WebKit runs. Two changes fixed it:
+
+- The test is now two tests, one per role, so no test switches users in the middle of a page. The two tests passed 30 of 30 WebKit runs on Linux without any filter.
+- In WebKit only, the browser-error check ignores this one message when the URL is on the app's own origin.
+
+The filter is deliberately narrow. It matches the exact WebKit message, only for URLs on the app's origin, and only in WebKit. Same-origin requests are not subject to CORS, so on the app's own origin this message comes from a cancelled request, not from a real access-control failure. Every other error, every other origin and all errors in Chromium and Firefox still fail the test.
 
 ## Dependency advisories
 

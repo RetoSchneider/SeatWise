@@ -42,12 +42,13 @@ function isCancelledFetch(error: Error, origin: string) {
 }
 
 export const test = base.extend<Fixtures>({
-  page: async ({ page, context, baseURL }, provide) => {
+  page: async ({ page, context, baseURL, browserName }, provide) => {
     const origin = new URL(baseURL!).origin;
+    const ignoreCancelledFetch = browserName === "webkit";
     const errors: string[] = [];
     const recordError = (event: WebError) => {
       const error = event.error();
-      if (!isCancelledFetch(error, origin)) {
+      if (!(ignoreCancelledFetch && isCancelledFetch(error, origin))) {
         errors.push(error.message);
       }
     };

@@ -4,20 +4,20 @@ SeatWise is tested at two levels. Vitest covers small, deterministic rules such 
 
 ## Risks and coverage
 
-| Risk                                            | How it is verified                                                                              | Tests                                                                                          |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Overselling assigned seats or general admission | Concurrent API requests, exactly one winner, inventory counts checked in the database           | [reservations](../tests/api/reservations.spec.ts)                                              |
-| Duplicate charges or tickets                    | Idempotency replay, reused key with different input, retry after a lost response in the browser | [checkout](../tests/api/checkout.spec.ts), [booking](../tests/ui/booking.spec.ts)              |
-| Payment failures                                | Declined, timed-out and transient payments, then a successful retry                             | [checkout](../tests/api/checkout.spec.ts), [booking](../tests/ui/booking.spec.ts)              |
-| Invalid reservations                            | Duplicate ticket types, per-type limits, expiry, repeated release                               | [reservations](../tests/api/reservations.spec.ts)                                              |
-| Promotion overuse                               | Concurrent checkouts, exact totals and redemption count                                         | [checkout](../tests/api/checkout.spec.ts)                                                      |
-| Unauthorized access                             | Anonymous requests, roles, ownership, role changes, suspension, cross-origin writes             | [authorization](../tests/api/authorization.spec.ts)                                            |
-| Refund races                                    | Concurrent requests, competing reviews, one refund, restored inventory, invalidated tickets     | [refunds](../tests/api/refunds.spec.ts)                                                        |
-| Catalog errors                                  | Sorting before pagination, search, empty results                                                | [catalog](../tests/api/catalog.spec.ts), [discovery](../tests/ui/discovery.spec.ts)            |
-| Organizer workflows                             | Event lifecycle, invalid input, venue creation, times shown in the venue timezone               | [organizer API](../tests/api/organizer.spec.ts), [organizer UI](../tests/ui/organizer.spec.ts) |
-| Accessibility                                   | axe-core scan of 23 pages for every role against WCAG 2.2 A and AA rules                        | [accessibility](../tests/a11y/accessibility.spec.ts)                                           |
-| Browser regressions                             | Keyboard seat selection, QR ticket, failed login, language persistence, uncaught browser errors | [booking](../tests/ui/booking.spec.ts), [discovery](../tests/ui/discovery.spec.ts)             |
-| Input errors                                    | Malformed JSON, structured validation errors, request IDs, reservation rate limits              | [catalog](../tests/api/catalog.spec.ts), [authorization](../tests/api/authorization.spec.ts)   |
+| Risk                                            | How it is verified                                                                              | Tests                                                                                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Overselling assigned seats or general admission | Concurrent API requests, exactly one winner, inventory counts checked in the database           | [reservations](../tests/api/reservations.spec.ts)                                                                                     |
+| Duplicate charges or tickets                    | Idempotency replay, reused key with different input, retry after a lost response in the browser | [checkout](../tests/api/checkout.spec.ts), [booking](../tests/ui/booking.spec.ts)                                                     |
+| Payment failures                                | Declined, timed-out and transient payments, then a successful retry                             | [checkout](../tests/api/checkout.spec.ts), [booking](../tests/ui/booking.spec.ts)                                                     |
+| Invalid reservations                            | Duplicate ticket types, per-type limits, expiry, repeated release                               | [reservations](../tests/api/reservations.spec.ts)                                                                                     |
+| Promotion overuse                               | Concurrent checkouts, exact totals and redemption count                                         | [checkout](../tests/api/checkout.spec.ts)                                                                                             |
+| Unauthorized access                             | Anonymous requests, roles, ownership, role changes, suspension, cross-origin writes             | [authorization](../tests/api/authorization.spec.ts)                                                                                   |
+| Refund races                                    | Concurrent requests, competing reviews, one refund, restored inventory, invalidated tickets     | [refunds](../tests/api/refunds.spec.ts)                                                                                               |
+| Catalog errors                                  | Sorting before pagination, search, empty results                                                | [catalog](../tests/api/catalog.spec.ts), [discovery](../tests/ui/discovery.spec.ts)                                                   |
+| Organizer workflows                             | Event lifecycle, invalid input, venue creation, times shown in the venue timezone               | [organizer API](../tests/api/organizer.spec.ts), [organizer UI](../tests/ui/organizer.spec.ts), [admin UI](../tests/ui/admin.spec.ts) |
+| Accessibility                                   | axe-core scan of 23 pages for every role against WCAG 2.2 A and AA rules                        | [accessibility](../tests/a11y/accessibility.spec.ts)                                                                                  |
+| Browser regressions                             | Keyboard seat selection, QR ticket, failed login, language persistence, uncaught browser errors | [booking](../tests/ui/booking.spec.ts), [discovery](../tests/ui/discovery.spec.ts)                                                    |
+| Input errors                                    | Malformed JSON, structured validation errors, request IDs, reservation rate limits              | [catalog](../tests/api/catalog.spec.ts), [authorization](../tests/api/authorization.spec.ts)                                          |
 
 Unit tests next to the source cover price calculations, simulator outcomes, safe sign-in callback URLs, event schedule rules, ticket limits, timezone validation, transaction conflict handling and date formatting across daylight saving changes.
 
@@ -115,15 +115,17 @@ The [Quality workflow](../.github/workflows/quality.yml) runs on every pull requ
 
 Put business rules, permissions and database state in `tests/api`, user interactions in `tests/ui` and page scans in `tests/a11y`. Name the file `*.spec.ts` and import `test` and `expect` from `../support/fixtures` so isolation and the browser-error check apply.
 
-| Fixture                      | Use                                                           |
-| ---------------------------- | ------------------------------------------------------------- |
-| `scenario`                   | Unique users, event, venue, seats, ticket types and promotion |
-| `request`                    | Unauthenticated API context                                   |
-| `customer`, `otherCustomer`  | Separate signed-in customer API contexts                      |
-| `organizer`, `administrator` | Signed-in API contexts for role-specific behavior             |
-| `page`                       | Browser page that fails the test on uncaught browser errors   |
+| Fixture                      | Use                                                            |
+| ---------------------------- | -------------------------------------------------------------- |
+| `scenario`                   | Unique users, event, venue, seats, ticket types and promotion  |
+| `request`                    | Unauthenticated API context                                    |
+| `customer`, `otherCustomer`  | Separate signed-in customer API contexts                       |
+| `organizer`, `administrator` | Signed-in API contexts for role-specific behavior              |
+| `page`                       | Browser page that fails the test on uncaught errors in any tab |
 
 API role fixtures do not sign in the browser. In a browser test, call `signIn(page.request, scenario.customer.email)`, or use the login form when login is what you are testing. [booking.spec.ts](../tests/ui/booking.spec.ts) shows both.
+
+The browser-error check has one exception: in WebKit it ignores prefetch requests to the app's own origin that WebKit cancelled. [Defects found](defects.md#cancelled-prefetches-in-webkit) explains why this is safe.
 
 ```ts
 import { test, expect } from "../support/fixtures";
@@ -144,7 +146,7 @@ test("finds a published event by title", async ({ request, scenario }) => {
 });
 ```
 
-Use role and label locators and web-first assertions, and avoid fixed waits. Check the database where it proves a business rule. Do not loosen an assertion or add a retry to hide a failure. If a test needs extra records, keep them inside the scenario's cleanup or extend the cleanup.
+Use role and label locators and web-first assertions, and avoid fixed waits. Check the database where it proves a business rule. Keep each UI test to one signed-in user, because switching users in the same page cancels Next.js prefetches. Do not loosen an assertion or add a retry to hide a failure. If a test needs extra records, keep them inside the scenario's cleanup or extend the cleanup.
 
 ## Not covered
 

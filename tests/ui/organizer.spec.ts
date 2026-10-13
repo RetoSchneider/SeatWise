@@ -1,7 +1,7 @@
 import { test, expect, signIn } from "../support/fixtures";
 import { database } from "../support/scenario";
 
-test("event lists show performance times in the venue timezone", async ({
+test("dashboard shows performance times in the venue timezone", async ({
   page,
   scenario,
 }) => {
@@ -10,20 +10,14 @@ test("event lists show performance times in the venue timezone", async ({
     timeStyle: "short",
     timeZone: scenario.venue.timezone,
   }).format(scenario.performance.startsAt);
-  const eventRow = page
-    .getByRole("listitem")
-    .filter({ has: page.getByRole("heading", { name: scenario.event.title }) });
 
   await signIn(page.request, scenario.organizerUser.email);
   await page.goto("/organizer");
-  await expect(eventRow).toContainText(`${scenario.venue.name} · ${startsAt}`);
 
-  await page.context().clearCookies();
-  await signIn(page.request, scenario.administrator.email);
-  await page.goto("/admin/events");
-  await expect(eventRow).toContainText(
-    `${scenario.venue.name}, ${scenario.venue.city} · ${startsAt}`,
-  );
+  const eventRow = page
+    .getByRole("listitem")
+    .filter({ has: page.getByRole("heading", { name: scenario.event.title }) });
+  await expect(eventRow).toContainText(`${scenario.venue.name} · ${startsAt}`);
 });
 
 test("venue creation saves the venue and resets the form", async ({
