@@ -46,7 +46,7 @@ export default async function AdminEventsPage() {
                 {event.organizer.displayName} · {event.venue.name},{" "}
                 {event.venue.city}
                 {event.performances[0]
-                  ? ` · ${formatDateTime(event.performances[0].startsAt, undefined, locale)}`
+                  ? ` · ${formatDateTime(event.performances[0].startsAt, event.venue.timezone, locale)}`
                   : ""}
               </p>
               {event.organizer.status !== "ACTIVE" && (

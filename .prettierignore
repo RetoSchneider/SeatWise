@@ -7,4 +7,3 @@ pnpm-lock.yaml
 .test-runtime
 playwright-report
 test-results
-package-lock.json

@@ -2,10 +2,15 @@ name: Quality
 
 on:
   push:
+    branches: [master]
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -13,12 +18,12 @@ jobs:
     timeout-minutes: 20
     env:
       CI: "true"
+    outputs:
+      report: ${{ steps.report.outcome == 'success' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.18.3
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -30,14 +35,38 @@ jobs:
       - run: pnpm test:db:up
       - run: pnpm test:db:prepare
       - run: pnpm check
-      - run: pnpm test:e2e
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - id: e2e
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: playwright-results
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+      - id: report
+        uses: actions/upload-pages-artifact@v5
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' && github.event_name == 'push' }}
+        with:
+          path: playwright-report/
       - run: pnpm test:db:down
         if: always()
+
+  publish-report:
+    needs: verify
+    if: ${{ !cancelled() && needs.verify.outputs.report == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
