@@ -33,10 +33,24 @@ function clientHeaders(identity: string) {
   return { "x-forwarded-for": `198.18.${bytes[0]}.${bytes[1]}` };
 }
 
+const cancelledFetch =
+  /^Fetch API cannot load (\S+) due to access control checks\.$/;
+
+function isCancelledFetch(error: Error, origin: string) {
+  const url = error.stack?.split("\n", 1)[0].match(cancelledFetch)?.[1];
+  return url !== undefined && new URL(url).origin === origin;
+}
+
 export const test = base.extend<Fixtures>({
-  page: async ({ page, context }, provide) => {
+  page: async ({ page, context, baseURL }, provide) => {
+    const origin = new URL(baseURL!).origin;
     const errors: string[] = [];
-    const recordError = (event: WebError) => errors.push(event.error().message);
+    const recordError = (event: WebError) => {
+      const error = event.error();
+      if (!isCancelledFetch(error, origin)) {
+        errors.push(error.message);
+      }
+    };
     context.on("weberror", recordError);
     try {
       await provide(page);
