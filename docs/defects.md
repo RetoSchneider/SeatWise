@@ -49,13 +49,3 @@ The filter is deliberately narrow. It matches the exact WebKit message, only for
 ## Dependency advisories
 
 Next.js is on 16.3.3, which fixes a [Windows server advisory](https://github.com/advisories/GHSA-p293-qw3h-jr36). The overrides for `deepmerge-ts` and `mysql2` in `pnpm-workspace.yaml` fix advisories in Prisma's transitive dependencies.
-
-## Known limitations
-
-- Payments use a simulator. A real provider would need reconciliation for crashes between the provider's answer and the database commit, and an outbox for notifications.
-- Pending checkouts are not abandoned automatically, because releasing seats after an uncertain real payment would need reconciliation first.
-- Emails are stored with their delivery result, but there is no background worker that retries failed deliveries.
-- Expired reservations are released when inventory is next read, in small batches, not by a scheduled job.
-- Some management lists have fixed limits instead of full pagination.
-- API error messages and seeded event texts are not fully translated.
-- The OpenAPI document is maintained by hand and does not describe every response body.

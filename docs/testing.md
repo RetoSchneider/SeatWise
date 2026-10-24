@@ -148,14 +148,6 @@ test("finds a published event by title", async ({ request, scenario }) => {
 
 Use role and label locators and web-first assertions, and avoid fixed waits. Check the database where it proves a business rule. Keep each UI test to one signed-in user, because switching users in the same page cancels Next.js prefetches. Do not loosen an assertion or add a retry to hide a failure. If a test needs extra records, keep them inside the scenario's cleanup or extend the cleanup.
 
-## Not covered
-
-- Load and performance testing
-- Penetration testing
-- Manual accessibility checks such as screen reader use; axe finds only the issues that can be detected automatically
-- A real payment provider; the simulator returns fixed outcomes
-- Email delivery; Mailpit receives the messages but the tests do not read them
-
 ## Troubleshooting
 
 | Problem                                     | What to do                                                                               |

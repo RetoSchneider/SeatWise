@@ -2,7 +2,7 @@
 
 [![Quality](https://github.com/RetoSchneider/SeatWise/actions/workflows/quality.yml/badge.svg?branch=master)](https://github.com/RetoSchneider/SeatWise/actions/workflows/quality.yml)
 
-SeatWise is an event-ticketing app built to show how I test a web application. Customers reserve seats and pay with a payment simulator, organizers run events and refunds, and administrators moderate. The Playwright suite runs API, browser and accessibility tests against the production build and a real PostgreSQL database.
+SeatWise is an event-ticketing web application and a showcase for how I test one. Customers reserve seats and pay through a payment simulator, organizers manage their events and refunds, and administrators moderate the platform. A Playwright suite runs API, browser and accessibility tests against the production build and a real PostgreSQL database.
 
 **[Open the latest test report](https://retoschneider.github.io/SeatWise/)**: the Playwright HTML report from the last CI run on `master`.
 
@@ -68,11 +68,12 @@ pnpm test:report
 - [Demo guide](docs/demo.md): accounts, booking walkthrough and troubleshooting
 - [API](docs/api.md), [architecture](docs/architecture.md), [operations and security](docs/operations.md) and [decision records](docs/adr)
 
-Built with Next.js 16, React 19, TypeScript, Prisma 7, PostgreSQL 18, Better Auth, Playwright, Vitest and axe-core.
+## Tech stack
 
-## How it was built
-
-I built SeatWise with AI coding assistants. I chose the risks to test, designed the test strategy and reviewed the code and tests. `AGENTS.md` and `CLAUDE.md` are instruction files that Next.js 16 generates for coding agents.
+- **Application:** Next.js 16, React 19, TypeScript, Better Auth
+- **Data:** Prisma 7, PostgreSQL 18, Mailpit for local email
+- **Testing:** Playwright, Vitest, axe-core
+- **CI:** GitHub Actions, with the test report published to GitHub Pages
 
 ## License
 
