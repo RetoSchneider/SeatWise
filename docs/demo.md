@@ -46,7 +46,7 @@ To see a failure, choose **Declined payment** first. After the error, switch to 
 
 ## Language and email
 
-The language menu switches between English and German and is remembered in a cookie. Event times are shown in the venue's timezone. Seeded event texts and some API error messages stay in their original language.
+The language menu switches between English and German; the choice is remembered in a cookie. Event times are shown in the venue's timezone. Seeded event texts and some API error messages stay in their original language.
 
 Email goes to [Mailpit](http://localhost:8025) instead of real inboxes. There you can read ticket confirmations and password reset emails.
 
